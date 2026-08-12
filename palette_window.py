@@ -148,7 +148,10 @@ class PaletteWindow(QWidget):
             title_font.setBold(True)
             title_label.setFont(title_font)
             layout.addWidget(title_label)
-            layout.addWidget(widget)
+            if widget is vline:
+                layout.addWidget(widget, alignment=Qt.AlignHCenter)
+            else:
+                layout.addWidget(widget)
 
         layout.addStretch()
 

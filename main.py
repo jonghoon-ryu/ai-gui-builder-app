@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from canvas_window import CanvasWindow, get_saved_window_size
 from palette_window import PaletteWindow
+from theme import APP_STYLESHEET
 
 CM_PER_INCH = 2.54
 DEFAULT_DPI = 96
@@ -16,6 +17,7 @@ def cm_to_px(cm, dpi):
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyleSheet(APP_STYLESHEET)
 
     screen = app.primaryScreen()
     dpi_x = screen.physicalDotsPerInchX() if screen else DEFAULT_DPI

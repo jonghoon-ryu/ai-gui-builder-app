@@ -172,7 +172,6 @@ def classify_image_with_claude(path):
 def _browse_directory(line_edit):
     directory = QFileDialog.getExistingDirectory(
         line_edit, "디렉토리 선택", line_edit.text(),
-        options=QFileDialog.Option.DontUseNativeDialog,
     )
     if directory:
         line_edit.setText(directory)
@@ -229,7 +228,7 @@ def _create_lines(
         lines.append(f'self.{widget_id}.setPlaceholderText("URL 입력 (https://...)")')
         lines.append(
             f'_action = self.{widget_id}.addAction('
-            f'self.{widget_id}.style().standardIcon(QStyle.StandardPixmap.SP_DriveNetIcon), '
+            f'self.{widget_id}.style().standardIcon(QStyle.StandardPixmap.SP_DirLinkIcon), '
             f'QLineEdit.ActionPosition.TrailingPosition)'
         )
         lines.append(f'_action.triggered.connect(lambda: _prompt_url(self.{widget_id}))')

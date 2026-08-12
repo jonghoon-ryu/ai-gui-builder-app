@@ -136,7 +136,6 @@ def _make_placeholder_lineedit(parent, placeholder):
 def _browse_directory(line_edit):
     directory = QFileDialog.getExistingDirectory(
         line_edit, "디렉토리 선택", line_edit.text(),
-        options=QFileDialog.Option.DontUseNativeDialog,
     )
     if directory:
         line_edit.setText(directory)
@@ -167,7 +166,7 @@ def _make_urlbox(parent):
     small dialog for typing the URL, in addition to typing directly into
     the box itself."""
     edit = _make_placeholder_lineedit(parent, URL_PLACEHOLDER)
-    icon = edit.style().standardIcon(QStyle.StandardPixmap.SP_DriveNetIcon)
+    icon = edit.style().standardIcon(QStyle.StandardPixmap.SP_DirLinkIcon)
     action = edit.addAction(icon, QLineEdit.ActionPosition.TrailingPosition)
     action.setToolTip("URL 입력")
     action.triggered.connect(lambda: _prompt_url(edit))
