@@ -10,6 +10,8 @@ _ALARM_WIDGET_SOURCE_PATH = os.path.join(
 _WINDOW_STATUS_WIDGET_SOURCE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "window_status_widget.py"
 )
+_TAB_BAR_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tab_bar.py")
+_THEME_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "theme.py")
 
 
 def _read_alarm_widget_source():
@@ -24,6 +26,20 @@ def _read_window_status_widget_source():
     with open(_WINDOW_STATUS_WIDGET_SOURCE_PATH, "r", encoding="utf-8") as f:
         return f.read()
 
+
+def _read_tab_bar_source():
+    """Every export has tabs, so unlike the alarm/window-status widgets this
+    one is always embedded (not conditional on a widget kind being used)."""
+    with open(_TAB_BAR_SOURCE_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def _read_theme_source():
+    """Same reasoning as the tab bar - every export should look like the
+    builder, so the theme is always embedded rather than made conditional."""
+    with open(_THEME_SOURCE_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
 HEADER_TEMPLATE = '''import os
 import shutil
 import subprocess
@@ -36,7 +52,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from markdownify import markdownify as _html_to_markdown
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QFont
+from PySide6.QtGui import QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -193,13 +209,17 @@ def _prompt_url(line_edit):
         line_edit.setText(text)
 
 
+{tab_bar_source}
+{theme_source}
 {alarm_widget_source}
 {window_status_widget_source}
 class {class_name}(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("{window_title}")
+        self.resize({width}, {height})
         self.tabs = QTabWidget()
+        self.tabs.setTabBar(ColorTabBar())
         self.setCentralWidget(self.tabs)
 
 {init_body}
@@ -209,6 +229,7 @@ FOOTER_TEMPLATE = '''
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyleSheet(APP_STYLESHEET)
     window = {class_name}()
     window.show()
     sys.exit(app.exec())
@@ -324,7 +345,11 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
         entries = tab["entries"]
 
         init_lines.append(f'{page_var} = QWidget()')
-        init_lines.append(f'{page_var}.setFixedSize({width}, {height})')
+        # Not setFixedSize here - the page should just fill whatever content
+        # area QTabWidget gives it (window size minus the tab bar's own
+        # height), exactly like the builder's CanvasPage. Fixing it to the
+        # full window size here would make the *window* grow by the tab
+        # bar's height to fit it, since nothing else constrains the window.
         if tab.get("color"):
             init_lines.append(f'{page_var}.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)')
             init_lines.append(f'{page_var}.setStyleSheet("background-color: {tab["color"]};")')
@@ -382,6 +407,10 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
 
         title = tab["title"].replace('"', '\\"')
         init_lines.append(f'self.tabs.addTab({page_var}, "{title}")')
+        if tab.get("color"):
+            init_lines.append(
+                f'self.tabs.tabBar().set_tab_color({tab_index}, QColor("{tab["color"]}"))'
+            )
         init_lines.append("")
 
     init_body = textwrap.indent("\n".join(init_lines).rstrip(), "        ")
@@ -392,6 +421,8 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
         width=width,
         height=height,
         init_body=init_body,
+        tab_bar_source=_read_tab_bar_source(),
+        theme_source=_read_theme_source(),
         alarm_widget_source=_read_alarm_widget_source() if uses_alarm_clock else "",
         window_status_widget_source=(
             _read_window_status_widget_source() if uses_window_status else ""

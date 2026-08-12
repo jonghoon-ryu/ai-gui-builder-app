@@ -2,7 +2,7 @@ import json
 import os
 
 from PySide6.QtCore import QEvent, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
     QColorDialog,
@@ -21,9 +21,6 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QRubberBand,
     QStyle,
-    QStyleOptionTab,
-    QStylePainter,
-    QTabBar,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -35,6 +32,7 @@ from behavior_dialog import BehaviorDialog
 from code_binder import SIGNAL_BY_KIND, HandlerCompileError, bind_handler, compile_handler
 from exporter import export_to_file
 from palette_window import WIDGET_KIND_MIME
+from tab_bar import ColorTabBar
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "builder_state.json")
 
@@ -764,93 +762,6 @@ class CanvasPage(QWidget):
         )
 
 
-class ColorTabBar(QTabBar):
-    """Tab bar that can paint an individual tab's label area with a flat
-    color, bypassing the native style (which may ignore QPalette overrides)
-    so the fill is always visible."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._tab_colors = {}
-        self.tabMoved.connect(self._on_tab_moved)
-
-    def set_tab_color(self, index, color):
-        self._tab_colors[index] = color
-        self.update()
-
-    def _on_tab_moved(self, from_index, to_index):
-        """Keeps colors attached to their tab's content when the user
-        drags a tab to a new position."""
-        color = self._tab_colors.pop(from_index, None)
-        shifted = {}
-        for i, c in self._tab_colors.items():
-            if from_index < to_index and from_index < i <= to_index:
-                i -= 1
-            elif to_index <= i < from_index:
-                i += 1
-            shifted[i] = c
-        if color is not None:
-            shifted[to_index] = color
-        self._tab_colors = shifted
-        self.update()
-
-    def get_tab_color(self, index):
-        return self._tab_colors.get(index)
-
-    def remove_tab_color(self, index):
-        self._tab_colors.pop(index, None)
-        self._tab_colors = {
-            (i - 1 if i > index else i): color for i, color in self._tab_colors.items()
-        }
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QStylePainter(self)
-        current = self.currentIndex()
-        for index in range(self.count()):
-            color = self._tab_colors.get(index)
-            rect = self.tabRect(index)
-            font = QFont(self.font())
-            font.setBold(index == current)
-            if color is None:
-                painter.save()
-                opt = QStyleOptionTab()
-                self.initStyleOption(opt, index)
-                # Draw the native tab shape/chrome, then the label text
-                # ourselves (instead of the combined CE_TabBarTab) so the
-                # bold-when-selected font is actually honored — the native
-                # style ignores a font set on the option or the painter
-                # when drawing the label as part of CE_TabBarTab.
-                painter.drawControl(QStyle.ControlElement.CE_TabBarTabShape, opt)
-                text_rect = self.style().subElementRect(
-                    QStyle.SubElement.SE_TabBarTabText, opt, self
-                )
-                painter.setFont(font)
-                painter.setPen(self.palette().windowText().color())
-                painter.drawText(text_rect, Qt.AlignCenter, self.tabText(index))
-                painter.restore()
-            else:
-                painter.save()
-                painter.setFont(font)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                # Match the QSS-styled (uncolored) tabs' rounded top corners
-                # instead of a flat fillRect, so every tab reads as the same
-                # shape regardless of whether it has a custom color.
-                radius = 8
-                path = QPainterPath()
-                path.moveTo(rect.left(), rect.bottom())
-                path.lineTo(rect.left(), rect.top() + radius)
-                path.arcTo(rect.left(), rect.top(), 2 * radius, 2 * radius, 180, -90)
-                path.lineTo(rect.right() - radius, rect.top())
-                path.arcTo(rect.right() - 2 * radius, rect.top(), 2 * radius, 2 * radius, 90, -90)
-                path.lineTo(rect.right(), rect.bottom())
-                path.closeSubpath()
-                painter.fillPath(path, color)
-                painter.setPen(self.palette().windowText().color())
-                painter.drawText(rect, Qt.AlignCenter, self.tabText(index))
-                painter.restore()
-
-
 class CanvasTabs(QTabWidget):
     """Tab strip for the canvas. Right-clicking the empty space to the right
     of the tabs adds a new tab; right-clicking an existing tab offers to
@@ -988,9 +899,6 @@ class CanvasWindow(QMainWindow):
         self.setWindowTitle("나만의 tool")
         self.resize(width_px, height_px)
 
-        self._width_px = width_px
-        self._height_px = height_px
-
         self.tabs = CanvasTabs()
         self.setCentralWidget(self.tabs)
 
@@ -1025,7 +933,7 @@ class CanvasWindow(QMainWindow):
         ]
 
         try:
-            export_to_file(tabs_data, self._width_px, self._height_px, file_path)
+            export_to_file(tabs_data, self.width(), self.height(), file_path)
         except Exception as exc:  # surfaced to the user, not swallowed
             QMessageBox.critical(self, "내보내기 실패", str(exc))
             return

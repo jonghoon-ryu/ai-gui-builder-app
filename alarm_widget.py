@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import uuid
@@ -33,6 +34,112 @@ DEFAULT_DPI = 96
 _CLAUDE_BIN = "claude"
 _ALARM_PARSE_TIMEOUT_SECONDS = 60
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|```\s*$", re.MULTILINE)
+
+ALARM_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alarm_state.json")
+
+
+def _serialize_alarms(alarms):
+    """Only alarms that can still fire in the future are worth persisting -
+    a fired one-time alarm or a recurring alarm whose end date has already
+    passed would just be dead weight in the save file."""
+    today = QDate.currentDate()
+    serialized = []
+    for alarm in alarms:
+        if alarm["type"] == "once":
+            if alarm.get("fired"):
+                continue
+            serialized.append(
+                {
+                    "id": alarm["id"],
+                    "type": "once",
+                    "datetime": alarm["datetime"].toString(Qt.DateFormat.ISODate),
+                    "message": alarm.get("message") or DEFAULT_ALARM_MESSAGE,
+                    "enabled": alarm.get("enabled", True),
+                }
+            )
+        else:
+            if alarm["end_date"] < today:
+                continue
+            serialized.append(
+                {
+                    "id": alarm["id"],
+                    "type": "recurring",
+                    "start_date": alarm["start_date"].toString(Qt.DateFormat.ISODate),
+                    "end_date": alarm["end_date"].toString(Qt.DateFormat.ISODate),
+                    "weekdays": sorted(alarm["weekdays"]),
+                    "time": alarm["time"].toString("HH:mm"),
+                    "fired_dates": sorted(alarm["fired_dates"]),
+                    "message": alarm.get("message") or DEFAULT_ALARM_MESSAGE,
+                    "enabled": alarm.get("enabled", True),
+                }
+            )
+    return serialized
+
+
+def _deserialize_alarms(data):
+    alarms = []
+    for item in data:
+        try:
+            if item["type"] == "once":
+                dt = QDateTime.fromString(item["datetime"], Qt.DateFormat.ISODate)
+                if not dt.isValid():
+                    continue
+                alarms.append(
+                    {
+                        "id": item.get("id") or str(uuid.uuid4()),
+                        "type": "once",
+                        "datetime": dt,
+                        "fired": False,
+                        "message": item.get("message") or DEFAULT_ALARM_MESSAGE,
+                        "enabled": item.get("enabled", True),
+                    }
+                )
+            elif item["type"] == "recurring":
+                start_date = QDate.fromString(item["start_date"], Qt.DateFormat.ISODate)
+                end_date = QDate.fromString(item["end_date"], Qt.DateFormat.ISODate)
+                time = QTime.fromString(item["time"], "HH:mm")
+                if not (start_date.isValid() and end_date.isValid() and time.isValid()):
+                    continue
+                weekdays = [
+                    d for d in item.get("weekdays", []) if isinstance(d, int) and 0 <= d <= 6
+                ]
+                if not weekdays:
+                    continue
+                alarms.append(
+                    {
+                        "id": item.get("id") or str(uuid.uuid4()),
+                        "type": "recurring",
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "weekdays": weekdays,
+                        "time": time,
+                        "fired_dates": set(item.get("fired_dates", [])),
+                        "message": item.get("message") or DEFAULT_ALARM_MESSAGE,
+                        "enabled": item.get("enabled", True),
+                    }
+                )
+        except (KeyError, TypeError):
+            continue
+    return alarms
+
+
+def _load_alarm_state():
+    if not os.path.exists(ALARM_STATE_FILE):
+        return []
+    try:
+        with open(ALARM_STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return _deserialize_alarms(data)
+
+
+def _save_alarm_state(alarms):
+    try:
+        with open(ALARM_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(_serialize_alarms(alarms), f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
 
 _ALARM_PARSE_SYSTEM_PROMPT = """\
 당신은 사용자의 자연어 알람 설명을 구조화된 JSON으로 변환하는 어시스턴트입니다.
@@ -347,7 +454,7 @@ class AlarmClockPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._alarms = []
+        self._alarms = _load_alarm_state()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 10, 12, 10)
@@ -439,6 +546,7 @@ class AlarmClockPanel(QWidget):
                 "enabled": True,
             }
         )
+        _save_alarm_state(self._alarms)
         self._refresh_list()
 
     def _add_recurring_alarm(self):
@@ -466,6 +574,7 @@ class AlarmClockPanel(QWidget):
                 "enabled": True,
             }
         )
+        _save_alarm_state(self._alarms)
         self._refresh_list()
 
     def _add_alarm_from_text(self):
@@ -491,6 +600,7 @@ class AlarmClockPanel(QWidget):
             QMessageBox.critical(self, "알람 설정 실패", str(exc))
             return
         self._alarms.append(alarm)
+        _save_alarm_state(self._alarms)
         self._refresh_list()
         self.nl_edit.clear()
 
@@ -547,6 +657,7 @@ class AlarmClockPanel(QWidget):
 
     def _delete_alarm(self, alarm_id):
         self._alarms = [a for a in self._alarms if a["id"] != alarm_id]
+        _save_alarm_state(self._alarms)
         self._refresh_list()
 
     def _toggle_alarm(self, alarm_id):
@@ -554,6 +665,7 @@ class AlarmClockPanel(QWidget):
             if alarm["id"] == alarm_id:
                 alarm["enabled"] = not alarm.get("enabled", True)
                 break
+        _save_alarm_state(self._alarms)
         self._refresh_list()
 
     def _next_occurrence(self, alarm, now):
@@ -601,6 +713,7 @@ class AlarmClockPanel(QWidget):
             alarm["fired"] = True
         else:
             alarm["fired_dates"].add(occurrence.date().toString(Qt.DateFormat.ISODate))
+        _save_alarm_state(self._alarms)
         popup = _AlarmPopup(alarm.get("message") or DEFAULT_ALARM_MESSAGE, self)
         popup.exec()
 
