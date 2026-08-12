@@ -67,6 +67,7 @@ cd /home/ryuj/Ryu/ai-gui-builder-app
 | `code_binder.py` | 생성 코드를 제한된 네임스페이스에서 실행, 위젯 시그널에 바인딩 |
 | `exporter.py` | 캔버스 상태를 독립 실행 가능한 `.py` 소스로 직렬화 |
 | `alarm_widget.py` | "알람 시계" 위젯 (캘린더/시간 선택, 남은 시간 표시, 아날로그 시계) |
+| `window_status_widget.py` | "윈도우 현황" 위젯 (Windows 버전/CPU/메모리/디스크/휴지통, `ctypes`만 사용) |
 | `theme.py` | 빌더 창(캔버스/팔레트)에 적용하는 앱 전역 QSS. `main.py`에서 `QApplication.setStyleSheet`로 적용 |
 | `md_files/` | 문서(`how_to_use.md`, `tool_requirement.md`) 모음 |
 | `standalone/` | standalone 내보내기 결과물들을 날짜별 하위 폴더로 정리해 모아두는 곳 (예: `standalone/2026_07_26/app.py`) |

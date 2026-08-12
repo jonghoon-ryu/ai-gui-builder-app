@@ -130,7 +130,24 @@
     {
       "title": "윈도우 현황",
       "color": "#deddda",
-      "widgets": []
+      "widgets": [
+        {
+          "id": "windowstatus_1",
+          "kind": "windowstatus",
+          "x": 30,
+          "y": 56,
+          "width": 760,
+          "height": 400,
+          "instruction": "",
+          "code": "",
+          "text": null,
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false
+        }
+      ]
     },
     {
       "title": "alarm",

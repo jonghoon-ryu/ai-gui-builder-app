@@ -7,6 +7,9 @@ from code_binder import SIGNAL_BY_KIND
 _ALARM_WIDGET_SOURCE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "alarm_widget.py"
 )
+_WINDOW_STATUS_WIDGET_SOURCE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "window_status_widget.py"
+)
 
 
 def _read_alarm_widget_source():
@@ -14,6 +17,11 @@ def _read_alarm_widget_source():
     of hand-duplicating the class as a string template - keeps the builder
     and the standalone export from drifting apart."""
     with open(_ALARM_WIDGET_SOURCE_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def _read_window_status_widget_source():
+    with open(_WINDOW_STATUS_WIDGET_SOURCE_PATH, "r", encoding="utf-8") as f:
         return f.read()
 
 HEADER_TEMPLATE = '''import os
@@ -186,6 +194,7 @@ def _prompt_url(line_edit):
 
 
 {alarm_widget_source}
+{window_status_widget_source}
 class {class_name}(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -246,6 +255,8 @@ def _create_lines(
         lines.append(f'self.{widget_id}.setAutoExclusive(False)')
     elif kind == "alarmclock":
         lines.append(f'self.{widget_id} = AlarmClockPanel({parent_var})')
+    elif kind == "windowstatus":
+        lines.append(f'self.{widget_id} = WindowStatusPanel({parent_var})')
     elif kind == "hline":
         lines.append(f'self.{widget_id} = QFrame({parent_var})')
         lines.append(f'self.{widget_id}.setFrameShape(QFrame.Shape.HLine)')
@@ -302,6 +313,9 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
     method_blocks = []
     uses_alarm_clock = any(
         entry["kind"] == "alarmclock" for tab in tabs for entry in tab["entries"].values()
+    )
+    uses_window_status = any(
+        entry["kind"] == "windowstatus" for tab in tabs for entry in tab["entries"].values()
     )
 
     for tab_index, tab in enumerate(tabs):
@@ -379,6 +393,9 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
         height=height,
         init_body=init_body,
         alarm_widget_source=_read_alarm_widget_source() if uses_alarm_clock else "",
+        window_status_widget_source=(
+            _read_window_status_widget_source() if uses_window_status else ""
+        ),
     )
     if method_blocks:
         source += "\n" + "\n".join(method_blocks)

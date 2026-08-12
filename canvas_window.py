@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from alarm_widget import AlarmClockPanel
+from window_status_widget import WindowStatusPanel
 from behavior_dialog import BehaviorDialog
 from code_binder import SIGNAL_BY_KIND, HandlerCompileError, bind_handler, compile_handler
 from exporter import export_to_file
@@ -175,7 +176,12 @@ def _make_urlbox(parent):
 
 # Per-kind default size for widgets whose natural adjustSize() result isn't
 # a good starting point (thin lines, the alarm clock panel).
-LINE_DEFAULT_SIZE = {"hline": (100, 36), "vline": (36, 100), "alarmclock": (1000, 640)}
+LINE_DEFAULT_SIZE = {
+    "hline": (100, 36),
+    "vline": (36, 100),
+    "alarmclock": (1000, 640),
+    "windowstatus": (760, 400),
+}
 URL_PLACEHOLDER = "URL 입력 (https://...)"
 DIR_PLACEHOLDER = "디렉토리 경로 입력"
 
@@ -189,6 +195,7 @@ WIDGET_FACTORIES = {
     "dirbox": _make_dirbox,
     "radiobutton": lambda parent: QRadioButton("옵션", parent),
     "alarmclock": lambda parent: AlarmClockPanel(parent),
+    "windowstatus": lambda parent: WindowStatusPanel(parent),
 }
 
 # Text-box-flavored kinds that share lineedit's behavior (font menu, etc.)
