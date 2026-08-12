@@ -2,7 +2,7 @@ import json
 import os
 
 from PySide6.QtCore import QEvent, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
     QColorDialog,
@@ -48,9 +48,17 @@ def _widget_text(widget):
     return widget.text() if hasattr(widget, "text") else None
 
 
-def _save_state(tabs_widget):
+def _save_state(tabs_widget, window_size=None):
+    if window_size is None:
+        # Preserve whatever window size was last saved instead of wiping it out.
+        previous = _load_state()
+        window_size = previous.get("window") if previous else None
+    else:
+        window_size = {"width": window_size[0], "height": window_size[1]}
+
     tab_bar = tabs_widget.tabBar()
     data = {
+        "window": window_size,
         "tabs": [
             {
                 "title": tabs_widget.tabText(i),
@@ -92,6 +100,16 @@ def _load_state():
             return json.load(f)
     except (OSError, ValueError):
         return None
+
+
+def get_saved_window_size():
+    """Returns (width_px, height_px) last saved for the '나만의 tool' window,
+    or None if nothing has been saved yet."""
+    state = _load_state()
+    window = state.get("window") if state else None
+    if not window:
+        return None
+    return window.get("width"), window.get("height")
 
 
 def _make_combobox(parent):
@@ -782,15 +800,32 @@ class ColorTabBar(QTabBar):
 
     def paintEvent(self, event):
         painter = QStylePainter(self)
+        current = self.currentIndex()
         for index in range(self.count()):
             color = self._tab_colors.get(index)
             rect = self.tabRect(index)
+            font = QFont(self.font())
+            font.setBold(index == current)
             if color is None:
+                painter.save()
                 opt = QStyleOptionTab()
                 self.initStyleOption(opt, index)
-                painter.drawControl(QStyle.ControlElement.CE_TabBarTab, opt)
+                # Draw the native tab shape/chrome, then the label text
+                # ourselves (instead of the combined CE_TabBarTab) so the
+                # bold-when-selected font is actually honored — the native
+                # style ignores a font set on the option or the painter
+                # when drawing the label as part of CE_TabBarTab.
+                painter.drawControl(QStyle.ControlElement.CE_TabBarTabShape, opt)
+                text_rect = self.style().subElementRect(
+                    QStyle.SubElement.SE_TabBarTabText, opt, self
+                )
+                painter.setFont(font)
+                painter.setPen(self.palette().windowText().color())
+                painter.drawText(text_rect, Qt.AlignCenter, self.tabText(index))
+                painter.restore()
             else:
                 painter.save()
+                painter.setFont(font)
                 painter.fillRect(rect, color)
                 painter.setPen(self.palette().windowText().color())
                 painter.drawText(rect, Qt.AlignCenter, self.tabText(index))
@@ -941,13 +976,13 @@ class CanvasWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
 
     def save_template(self):
-        _save_state(self.tabs)
+        _save_state(self.tabs, window_size=(self.width(), self.height()))
         QMessageBox.information(
             self, "틀 저장 완료", f"지금까지 만든 탭/위젯 구성을 저장했습니다.\n({STATE_FILE})"
         )
 
     def closeEvent(self, event):
-        _save_state(self.tabs)
+        _save_state(self.tabs, window_size=(self.width(), self.height()))
         super().closeEvent(event)
 
     def export_dialog(self):

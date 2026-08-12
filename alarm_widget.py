@@ -353,8 +353,8 @@ class AlarmClockPanel(QWidget):
         self.nl_edit.setPlaceholderText(
             "예: 내일 오전 9시에 회의 알람\n매주 화목 저녁 8시에 운동\n\n(Ctrl+Enter로 설정)"
         )
-        self.nl_edit.setFixedWidth(190 + _cm_to_px(3))
-        self.nl_edit.setFixedHeight(110)
+        self.nl_edit.setFixedWidth(190 + _cm_to_px(3) + 60)
+        self.nl_edit.setFixedHeight(80)
         self.nl_edit.submitted.connect(self._add_alarm_from_text)
         buttons_col.addWidget(self.nl_edit)
 
@@ -377,10 +377,10 @@ class AlarmClockPanel(QWidget):
         self.calendar.setMaximumWidth(300)
         self.calendar.setMaximumHeight(190)
         self.calendar.setSelectedDate(QDate.currentDate())
-        top_row.addWidget(self.calendar)
+        top_row.addWidget(self.calendar, 0, Qt.AlignTop)
         top_row.addStretch(1)
         self.clock = AnalogClock()
-        top_row.addWidget(self.clock)
+        top_row.addWidget(self.clock, 0, Qt.AlignTop)
         top_row.addSpacing(_cm_to_px(0.5))
         outer.addLayout(top_row)
 

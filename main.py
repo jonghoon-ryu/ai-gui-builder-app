@@ -3,7 +3,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from canvas_window import CanvasWindow
+from canvas_window import CanvasWindow, get_saved_window_size
 from palette_window import PaletteWindow
 
 CM_PER_INCH = 2.54
@@ -21,8 +21,12 @@ def main():
     dpi_x = screen.physicalDotsPerInchX() if screen else DEFAULT_DPI
     dpi_y = screen.physicalDotsPerInchY() if screen else DEFAULT_DPI
 
-    width_px = cm_to_px(30, dpi_x)
-    height_px = cm_to_px(20, dpi_y)
+    saved_size = get_saved_window_size()
+    if saved_size and saved_size[0] and saved_size[1]:
+        width_px, height_px = saved_size
+    else:
+        width_px = cm_to_px(30, dpi_x)
+        height_px = cm_to_px(20, dpi_y)
 
     canvas = CanvasWindow(width_px, height_px)
     canvas.move(100, 100)
