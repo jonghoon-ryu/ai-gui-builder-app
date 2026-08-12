@@ -2,7 +2,7 @@ import json
 import os
 
 from PySide6.QtCore import QEvent, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
     QColorDialog,
@@ -832,7 +832,20 @@ class ColorTabBar(QTabBar):
             else:
                 painter.save()
                 painter.setFont(font)
-                painter.fillRect(rect, color)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                # Match the QSS-styled (uncolored) tabs' rounded top corners
+                # instead of a flat fillRect, so every tab reads as the same
+                # shape regardless of whether it has a custom color.
+                radius = 8
+                path = QPainterPath()
+                path.moveTo(rect.left(), rect.bottom())
+                path.lineTo(rect.left(), rect.top() + radius)
+                path.arcTo(rect.left(), rect.top(), 2 * radius, 2 * radius, 180, -90)
+                path.lineTo(rect.right() - radius, rect.top())
+                path.arcTo(rect.right() - 2 * radius, rect.top(), 2 * radius, 2 * radius, 90, -90)
+                path.lineTo(rect.right(), rect.bottom())
+                path.closeSubpath()
+                painter.fillPath(path, color)
                 painter.setPen(self.palette().windowText().color())
                 painter.drawText(rect, Qt.AlignCenter, self.tabText(index))
                 painter.restore()
@@ -997,7 +1010,6 @@ class CanvasWindow(QMainWindow):
             "독립 실행 앱으로 내보내기",
             "app.py",
             "Python Files (*.py)",
-            options=QFileDialog.Option.DontUseNativeDialog,
         )
         if not file_path:
             return

@@ -306,5 +306,7 @@ LLM이 생성한 코드는 클릭 한 번에 확인 없이 바로 실행되기 �
   `./venv/bin/python`으로 실행해야 한다.
 - 위젯 id는 탭(캔버스 페이지)마다 독립적으로 순차 증가하는 카운터로 부여된다 (`button_1`, `button_2`, ...).
   위젯을 삭제해도 카운터는 줄어들지 않는다 (id 재사용 안 함).
-- 저장/내보내기 다이얼로그는 `QFileDialog.Option.DontUseNativeDialog`를 사용한다 — 시스템 기본
-  GTK 다이얼로그 대신 Qt 자체 다이얼로그를 써야 "새 폴더 생성" 버튼이 항상 보인다.
+- 디렉토리 선택창/standalone 저장창은 Windows 네이티브 다이얼로그를 그대로 사용한다 (창 아이콘이
+  다른 Windows 창들과 일치하고, "새 폴더" 버튼도 기본 제공됨). 예전에는 `QFileDialog.Option.
+  DontUseNativeDialog`로 Qt 자체 다이얼로그를 썼었는데(리눅스 GTK 다이얼로그 대응용), Windows
+  전용이 된 지금은 그 옵션을 빼서 네이티브 창을 쓴다.
