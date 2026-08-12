@@ -94,8 +94,8 @@ cd /home/ryuj/Ryu/ai-gui-builder-app
 실행하면 두 창이 뜬다:
 - **나만의 tool** (왼쪽) — 30cm×20cm 크기, 탭으로 여러 화면 구성 가능. 완성될 앱이 실제로 살아있는 화면.
 - **위젯 팔레트** (오른쪽) — 왼쪽 컬럼에 드롭박스/누름 버튼/텍스트박스/URL 입력창/디렉토리 입력창/
-  라디오 버튼/가로선/세로선 원본이 나열되고, 세로 구분선 건너 오른쪽 컬럼에 "틀 저장"/"standalone
-  저장" 버튼이 따로 있음 (두 컬럼 너비는 서로 같게 맞춰져 있음).
+  라디오 버튼/가로선/세로선 원본이 나열되고, 세로 구분선 건너 오른쪽 컬럼에 "틀 저장"/"실행 py 저장"/
+  "standalone 실행 파일 저장" 버튼이 따로 있음 (두 컬럼 너비는 서로 같게 맞춰져 있음).
 
 동작 생성 단계(자연어 → 코드)에는 `claude` CLI가 로그인되어 있어야 한다 (별도 API 키 불필요,
 지금 로그인된 Claude Code 계정을 그대로 사용).
@@ -254,15 +254,32 @@ cd /home/ryuj/Ryu/ai-gui-builder-app
 
 ### 6-1. 빌더에서 내보내기
 
-팔레트의 **"standalone 저장"** 버튼 클릭 → 폴더 선택 + 파일명 입력(`.py`) → 저장.
+두 가지 방식이 있다.
+
+**"실행 py 저장"** 버튼 (예전 "standalone 저장") — 폴더 선택 + 파일명 입력(`.py`) → 저장. 나온 `.py`
+파일은 PySide6(+markdownify/beautifulsoup4)가 설치된 파이썬으로 실행해야 한다 (아래 6-2 참고).
 탭 여러 개로 만든 내용, 각 위젯의 텍스트/색깔/크기/폰트/동작이 전부 그대로 내보내진다. 탭바 모양도
 빌더와 완전히 동일하다 — 탭 위쪽 모서리가 둥글고, 색깔을 지정한 탭은 그 색으로 칠해지며, 선택된
 탭의 제목만 볼드로 표시된다 (`tab_bar.py`의 `ColorTabBar`를 그대로 내보내서 씀). 앱 전체 테마
 (`theme.py`)도 함께 내보내져서 버튼/입력창 등 전반적인 느낌도 빌더와 동일하다.
 
-내보낼 때는 `standalone/` 디렉토리 밑에 날짜(+번호)별 하위 폴더를 만들어 저장하는 것이 이 프로젝트의
-정리 방식이다 (예: `standalone/2026_08_09_#2/app.py`). 프로젝트 루트가 지저분해지지 않도록 새로 내보낼
-때도 이 규칙을 따른다.
+**"standalone 실행 파일 저장"** 버튼 — 저장 창이 뜨고(디폴트 파일명 `ai_tools.exe`), 위치와 이름을
+고르면 그 자리에서 바로 `.py`를 생성한 뒤 PyInstaller(`--onefile --windowed`)로 진짜 단일 `.exe`
+파일을 빌드해서 그 경로에 저장한다. **파이썬도 이 빌더도 없는 컴퓨터에서 그냥 실행 파일을 더블클릭해서
+바로 쓸 수 있다** (대신 PySide6 전체를 파일 안에 담기 때문에 exe 하나가 대략 50MB 안팎). 빌드는
+1~2분 정도 걸리므로 별도 스레드에서 실행되며, 그동안 버튼이 "빌드 중..."으로 바뀌고 비활성화된다.
+완료/실패 여부는 팝업으로 알려준다. 이 기능은 빌더 자신의 venv에 `pyinstaller`가 설치되어 있어야
+동작한다 (`requirements.txt`에 포함됨, `pip install -r requirements.txt`로 함께 설치됨).
+
+두 방식 모두, 내보내는 시점에 "git" 탭의 6쌍 remote/local 값과 "alarm" 탭의 (아직 울리지 않은) 알람
+목록이 빌더에 있는 그대로 내보낸 앱에도 미리 채워진다. 내보낸 앱을 실행한 뒤 그 안에서 새로 채우거나
+바꾼 값은 `.py` 방식이면 그 스크립트 파일과 같은 폴더의 `git_panel_state.json`/`alarm_state.json`에,
+`.exe` 방식이면 그 실행 파일과 같은 폴더에 각각 저장되어 다음 실행 때도 유지된다.
+
+**"실행 py 저장"**으로 내보낼 때는 `standalone/` 디렉토리 밑에 날짜(+번호)별 하위 폴더를 만들어
+저장하는 것이 이 프로젝트의 정리 방식이다 (예: `standalone/2026_08_09_#2/app.py`). 프로젝트 루트가
+지저분해지지 않도록 새로 내보낼 때도 이 규칙을 따른다 (`.exe`는 용량이 커서 이 규칙과 무관하게
+git에 커밋하지 않는다).
 
 ### 6-2. 내보낸 앱 실행시키는 방법
 
@@ -327,12 +344,12 @@ LLM이 생성한 코드는 클릭 한 번에 확인 없이 바로 실행되기 �
 | 파일 | 역할 |
 |---|---|
 | `main.py` | 진입점. cm→px 변환(30cm×20cm), 두 창 생성 및 배치 |
-| `palette_window.py` | 팔레트 창. 드래그 가능한 위젯 원본(`DraggableMixin` 기반) + "틀 저장"/"standalone 저장" 버튼 |
+| `palette_window.py` | 팔레트 창. 드래그 가능한 위젯 원본(`DraggableMixin` 기반) + "틀 저장"/"실행 py 저장"/"standalone 실행 파일 저장" 버튼 |
 | `canvas_window.py` | 캔버스 창. 탭 관리, 드롭 처리, 위젯 이동/크기조절/선택/복사·붙여넣기, 위젯·탭 우클릭 메뉴, 상태 저장/복원, 내보내기 다이얼로그 |
 | `behavior_dialog.py` | "동작 설정" 다이얼로그. 자연어 입력 + 코드 미리보기 + 생성(백그라운드 스레드)/저장 |
 | `ai_client.py` | `claude` CLI를 서브프로세스로 호출해 `def on_event(self): ...` 코드 생성. 시스템 프롬프트로 허용 함수/제약 명시 |
 | `code_binder.py` | 생성 코드를 제한된 네임스페이스에서 `exec`, 위젯 시그널에 바인딩. `open_url`/`read_file`/`write_file`/`delete_file` 정의 |
-| `exporter.py` | 캔버스 상태(여러 탭 포함)를 독립 실행 가능한 `.py` 소스로 직렬화 (`generate_source`/`export_to_file`) |
+| `exporter.py` | 캔버스 상태(여러 탭 포함)를 독립 실행 가능한 `.py` 소스로 직렬화 (`generate_source`/`export_to_file`), PyInstaller로 단일 `.exe` 빌드 (`build_exe`) |
 | `alarm_widget.py` | "알람 시계" 위젯 구현 (`AlarmClockPanel`, `AnalogClock`, 날짜/시간 선택 다이얼로그들) |
 | `window_status_widget.py` | "윈도우 현황" 위젯 구현 (`WindowStatusPanel`). Windows 버전/CPU/메모리/디스크/휴지통을 `ctypes`만으로 조회 |
 | `git_widget.py` | "git" 위젯 구현 (`GitPanel`). 드라이브 전체 git 저장소 검색 + local/remote 비교·stash (`git` CLI 필요) |
@@ -349,7 +366,7 @@ LLM이 생성한 코드는 클릭 한 번에 확인 없이 바로 실행되기 �
   `./venv/bin/python`으로 실행해야 한다.
 - 위젯 id는 탭(캔버스 페이지)마다 독립적으로 순차 증가하는 카운터로 부여된다 (`button_1`, `button_2`, ...).
   위젯을 삭제해도 카운터는 줄어들지 않는다 (id 재사용 안 함).
-- 디렉토리 선택창/standalone 저장창은 Windows 네이티브 다이얼로그를 그대로 사용한다 (창 아이콘이
+- 디렉토리 선택창/실행 py 저장창/exe 저장창은 Windows 네이티브 다이얼로그를 그대로 사용한다 (창 아이콘이
   다른 Windows 창들과 일치하고, "새 폴더" 버튼도 기본 제공됨). 예전에는 `QFileDialog.Option.
   DontUseNativeDialog`로 Qt 자체 다이얼로그를 썼었는데(리눅스 GTK 다이얼로그 대응용), Windows
   전용이 된 지금은 그 옵션을 빼서 네이티브 창을 쓴다.

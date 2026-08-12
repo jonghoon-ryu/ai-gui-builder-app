@@ -1,7 +1,12 @@
 import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import textwrap
 
+from alarm_widget import _serialize_alarms
 from code_binder import SIGNAL_BY_KIND
 
 _ALARM_WIDGET_SOURCE_PATH = os.path.join(
@@ -251,7 +256,7 @@ if __name__ == "__main__":
 
 def _create_lines(
     widget_id, kind, x, y, parent_var, text=None, color=None, width=None, height=None,
-    font_family=None, font_size=None, no_border=False,
+    font_family=None, font_size=None, no_border=False, widget=None,
 ):
     lines = []
     if kind == "combobox":
@@ -284,11 +289,28 @@ def _create_lines(
         lines.append(f'self.{widget_id} = QRadioButton("옵션", {parent_var})')
         lines.append(f'self.{widget_id}.setAutoExclusive(False)')
     elif kind == "alarmclock":
-        lines.append(f'self.{widget_id} = AlarmClockPanel({parent_var})')
+        # Seed the exported panel with whatever alarms exist in the builder
+        # right now, instead of it always starting empty.
+        alarms_data = _serialize_alarms(widget._alarms) if widget is not None else []
+        lines.append(
+            f'self.{widget_id} = AlarmClockPanel({parent_var}, initial_alarms={alarms_data!r})'
+        )
     elif kind == "windowstatus":
         lines.append(f'self.{widget_id} = WindowStatusPanel({parent_var})')
     elif kind == "gitpanel":
-        lines.append(f'self.{widget_id} = GitPanel({parent_var})')
+        # Seed the exported panel with whatever remote/local pairs exist in
+        # the builder right now, instead of it always starting empty.
+        pairs_data = (
+            [
+                {"remote": box.remote_edit.text(), "local": box.local_edit.text()}
+                for box in widget.pair_boxes
+            ]
+            if widget is not None
+            else []
+        )
+        lines.append(
+            f'self.{widget_id} = GitPanel({parent_var}, initial_pairs={pairs_data!r})'
+        )
     elif kind == "hline":
         lines.append(f'self.{widget_id} = QFrame({parent_var})')
         lines.append(f'self.{widget_id}.setFrameShape(QFrame.Shape.HLine)')
@@ -398,6 +420,7 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
                     entry.get("font_family"),
                     entry.get("font_size"),
                     entry.get("no_border", False),
+                    widget,
                 )
             )
 
@@ -454,3 +477,55 @@ def export_to_file(tabs, width, height, file_path, class_name="GeneratedApp", wi
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(source)
     return source
+
+
+def build_exe(tabs, width, height, dest_exe_path, class_name="GeneratedApp", window_title="My App"):
+    """Generates the app source (same as export_to_file), then runs
+    PyInstaller (via this venv's own `python -m PyInstaller`, so it doesn't
+    depend on a global `pyinstaller` on PATH) to produce a single-file .exe,
+    and copies the result to `dest_exe_path`. Raises RuntimeError with
+    PyInstaller's own error output if the build fails. Takes roughly
+    1-2 minutes - callers should run this off the UI thread."""
+    source = generate_source(tabs, width, height, class_name, window_title)
+    exe_stem = os.path.splitext(os.path.basename(dest_exe_path))[0] or "app"
+
+    with tempfile.TemporaryDirectory(prefix="ai_gui_builder_exe_") as tmp_dir:
+        src_path = os.path.join(tmp_dir, "app_src.py")
+        with open(src_path, "w", encoding="utf-8") as f:
+            f.write(source)
+
+        dist_dir = os.path.join(tmp_dir, "dist")
+        work_dir = os.path.join(tmp_dir, "build")
+
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "PyInstaller",
+                    "--onefile", "--windowed", "--noconfirm",
+                    "--distpath", dist_dir,
+                    "--workpath", work_dir,
+                    "--specpath", tmp_dir,
+                    "--name", exe_stem,
+                    src_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "PyInstaller를 찾을 수 없습니다. 이 빌더의 venv에 "
+                "`pip install pyinstaller`가 되어 있어야 합니다."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("빌드가 10분을 넘겨 시간 초과되었습니다.") from exc
+
+        if result.returncode != 0:
+            tail = "\n".join(result.stderr.strip().splitlines()[-20:])
+            raise RuntimeError(f"PyInstaller 빌드에 실패했습니다:\n{tail}")
+
+        built_exe = os.path.join(dist_dir, f"{exe_stem}.exe")
+        if not os.path.exists(built_exe):
+            raise RuntimeError("빌드는 성공했지만 결과 exe 파일을 찾을 수 없습니다.")
+
+        shutil.copy2(built_exe, dest_exe_path)

@@ -1,7 +1,7 @@
 import json
 import os
 
-from PySide6.QtCore import QEvent, QRect, QSize, Qt
+from PySide6.QtCore import QEvent, QRect, QSize, Qt, QThread, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -31,7 +31,7 @@ from git_widget import GitPanel
 from window_status_widget import WindowStatusPanel
 from behavior_dialog import BehaviorDialog
 from code_binder import SIGNAL_BY_KIND, HandlerCompileError, bind_handler, compile_handler
-from exporter import export_to_file
+from exporter import build_exe, export_to_file
 from palette_window import WIDGET_KIND_MIME
 from tab_bar import ColorTabBar
 
@@ -896,6 +896,29 @@ class CanvasTabs(QTabWidget):
         self.tabBar().set_tab_color(index, color)
 
 
+class _ExeBuildWorker(QThread):
+    """Runs build_exe() off the UI thread - a PyInstaller build takes
+    roughly 1-2 minutes, far too long to block the app on."""
+
+    succeeded = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, tabs_data, width, height, dest_path, parent=None):
+        super().__init__(parent)
+        self._tabs_data = tabs_data
+        self._width = width
+        self._height = height
+        self._dest_path = dest_path
+
+    def run(self):
+        try:
+            build_exe(self._tabs_data, self._width, self._height, self._dest_path)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
+            self.failed.emit(str(exc))
+            return
+        self.succeeded.emit(self._dest_path)
+
+
 class CanvasWindow(QMainWindow):
     def __init__(self, width_px, height_px):
         super().__init__()
@@ -947,3 +970,55 @@ class CanvasWindow(QMainWindow):
             f"{file_path} 로 저장했습니다.\n"
             f"이제 이 빌더나 claude CLI 없이 `python {file_path}` 만으로 실행할 수 있습니다.",
         )
+
+    def export_exe_dialog(self, trigger_button=None):
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "독립 실행 파일(.exe)로 내보내기",
+            "ai_tools.exe",
+            "Executable Files (*.exe)",
+        )
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".exe"):
+            file_path += ".exe"
+
+        tab_bar = self.tabs.tabBar()
+        tabs_data = [
+            {
+                "title": self.tabs.tabText(i),
+                "color": (tab_bar.get_tab_color(i).name() if tab_bar.get_tab_color(i) else None),
+                "entries": self.tabs.widget(i).entries,
+            }
+            for i in range(self.tabs.count())
+        ]
+
+        if trigger_button is not None:
+            trigger_button.setEnabled(False)
+            trigger_button.setText("빌드 중...")
+
+        QMessageBox.information(
+            self,
+            "빌드 시작",
+            "실행 파일 빌드를 시작합니다. 1~2분 정도 걸릴 수 있습니다.\n완료되면 알려드립니다.",
+        )
+
+        self._exe_build_worker = _ExeBuildWorker(
+            tabs_data, self.width(), self.height(), file_path, self
+        )
+        self._exe_build_worker.succeeded.connect(
+            lambda dest: self._on_exe_build_finished(trigger_button, dest_path=dest)
+        )
+        self._exe_build_worker.failed.connect(
+            lambda message: self._on_exe_build_finished(trigger_button, error=message)
+        )
+        self._exe_build_worker.start()
+
+    def _on_exe_build_finished(self, trigger_button, dest_path=None, error=None):
+        if trigger_button is not None:
+            trigger_button.setEnabled(True)
+            trigger_button.setText("standalone 실행 파일 저장")
+        if error is not None:
+            QMessageBox.critical(self, "빌드 실패", error)
+            return
+        QMessageBox.information(self, "빌드 완료", f"{dest_path} 로 저장했습니다.")

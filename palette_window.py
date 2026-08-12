@@ -172,10 +172,18 @@ class PaletteWindow(QWidget):
 
         save_col.addSpacing(30)
 
-        standalone_save_button = QPushButton("standalone 저장")
+        standalone_save_button = QPushButton("실행 py 저장")
         standalone_save_button.clicked.connect(self._on_standalone_save_clicked)
         standalone_save_button.setFixedWidth(ITEM_WIDTH)
         save_col.addWidget(standalone_save_button)
+
+        save_col.addSpacing(30)
+
+        exe_save_button = QPushButton("standalone 실행 파일 저장")
+        exe_save_button.clicked.connect(self._on_exe_save_clicked)
+        exe_save_button.setFixedWidth(ITEM_WIDTH)
+        save_col.addWidget(exe_save_button)
+        self._exe_save_button = exe_save_button
 
         save_col.addStretch()
 
@@ -188,3 +196,8 @@ class PaletteWindow(QWidget):
         if self._canvas_window is None:
             return
         self._canvas_window.export_dialog()
+
+    def _on_exe_save_clicked(self):
+        if self._canvas_window is None:
+            return
+        self._canvas_window.export_exe_dialog(self._exe_save_button)

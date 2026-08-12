@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import uuid
 
 from PySide6.QtCore import QDate, QDateTime, Qt, QThread, QTime, QTimer, Signal
@@ -35,7 +36,15 @@ _CLAUDE_BIN = "claude"
 _ALARM_PARSE_TIMEOUT_SECONDS = 60
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|```\s*$", re.MULTILINE)
 
-ALARM_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alarm_state.json")
+# PyInstaller onefile builds unpack __file__ into a temp dir that's wiped
+# after exit, so state saved there wouldn't survive a restart - save next to
+# the actual .exe instead when frozen.
+_STATE_DIR = (
+    os.path.dirname(os.path.abspath(sys.executable))
+    if getattr(sys, "frozen", False)
+    else os.path.dirname(os.path.abspath(__file__))
+)
+ALARM_STATE_FILE = os.path.join(_STATE_DIR, "alarm_state.json")
 
 
 def _serialize_alarms(alarms):
@@ -452,9 +461,22 @@ class AlarmClockPanel(QWidget):
     """Self-contained alarm clock: add one-time/recurring alarms, see them
     listed with a live countdown, and an analog clock in the corner."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, initial_alarms=None):
         super().__init__(parent)
-        self._alarms = _load_alarm_state()
+        # `initial_alarms` (same shape as the JSON state file) lets the
+        # standalone exporter seed this panel with whatever alarms existed
+        # in the builder at export time. But once alarm_state.json actually
+        # exists (created either by the builder or by a previous run of the
+        # exported app), it is the source of truth - otherwise every restart
+        # of the exported app would revert to the export-time snapshot baked
+        # into its source, undoing anything added/removed since then.
+        if os.path.exists(ALARM_STATE_FILE):
+            self._alarms = _load_alarm_state()
+        elif initial_alarms is not None:
+            self._alarms = _deserialize_alarms(initial_alarms)
+            _save_alarm_state(self._alarms)
+        else:
+            self._alarms = []
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 10, 12, 10)

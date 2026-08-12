@@ -10,6 +10,7 @@ app's user still needs `git` itself installed and on PATH, same as the
 import json
 import os
 import subprocess
+import sys
 from datetime import datetime
 
 from PySide6.QtCore import QThread, Signal
@@ -34,9 +35,15 @@ RESULT_SAME_COLOR = "#3aa655"
 RESULT_DIFF_COLOR = "#d64545"
 _SKIP_DIR_NAMES = {".git", "node_modules", "$RECYCLE.BIN", "System Volume Information"}
 
-GIT_PANEL_STATE_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "git_panel_state.json"
+# PyInstaller onefile builds unpack __file__ into a temp dir that's wiped
+# after exit, so state saved there wouldn't survive a restart - save next to
+# the actual .exe instead when frozen.
+_STATE_DIR = (
+    os.path.dirname(os.path.abspath(sys.executable))
+    if getattr(sys, "frozen", False)
+    else os.path.dirname(os.path.abspath(__file__))
 )
+GIT_PANEL_STATE_FILE = os.path.join(_STATE_DIR, "git_panel_state.json")
 
 
 def _run_git(args, cwd=None, timeout=_GIT_TIMEOUT_SECONDS):
@@ -377,10 +384,15 @@ class GitPanel(QWidget):
 
     PAIR_COUNT = 6
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, initial_pairs=None):
         super().__init__(parent)
         self._batch_worker = None
         self._scan_worker = None
+        # `initial_pairs` (same shape as the JSON state file) lets the
+        # standalone exporter seed this panel with whatever remote/local
+        # pairs existed in the builder at export time, instead of always
+        # starting empty.
+        self._initial_pairs = initial_pairs
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 10, 12, 10)
@@ -395,7 +407,19 @@ class GitPanel(QWidget):
         top_row.addWidget(self.status_button)
         outer.addLayout(top_row)
 
-        saved_pairs = _load_git_panel_state()
+        # `self._initial_pairs` seeds a fresh export, but once
+        # git_panel_state.json actually exists (created either by the
+        # builder or by a previous run of the exported app), it is the
+        # source of truth - otherwise every restart of the exported app
+        # would revert to the export-time snapshot baked into its source,
+        # undoing anything typed since then.
+        if os.path.exists(GIT_PANEL_STATE_FILE):
+            saved_pairs = _load_git_panel_state()
+        elif self._initial_pairs is not None:
+            saved_pairs = self._initial_pairs
+            _save_git_panel_state(saved_pairs)
+        else:
+            saved_pairs = []
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
