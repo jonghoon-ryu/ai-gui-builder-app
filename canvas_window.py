@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from alarm_widget import AlarmClockPanel
+from git_widget import GitPanel
 from window_status_widget import WindowStatusPanel
 from behavior_dialog import BehaviorDialog
 from code_binder import SIGNAL_BY_KIND, HandlerCompileError, bind_handler, compile_handler
@@ -179,6 +180,7 @@ LINE_DEFAULT_SIZE = {
     "vline": (36, 100),
     "alarmclock": (1000, 640),
     "windowstatus": (760, 400),
+    "gitpanel": (800, 630),
 }
 URL_PLACEHOLDER = "URL 입력 (https://...)"
 DIR_PLACEHOLDER = "디렉토리 경로 입력"
@@ -194,6 +196,7 @@ WIDGET_FACTORIES = {
     "radiobutton": lambda parent: QRadioButton("옵션", parent),
     "alarmclock": lambda parent: AlarmClockPanel(parent),
     "windowstatus": lambda parent: WindowStatusPanel(parent),
+    "gitpanel": lambda parent: GitPanel(parent),
 }
 
 # Text-box-flavored kinds that share lineedit's behavior (font menu, etc.)

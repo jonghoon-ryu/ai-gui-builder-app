@@ -10,6 +10,9 @@ _ALARM_WIDGET_SOURCE_PATH = os.path.join(
 _WINDOW_STATUS_WIDGET_SOURCE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "window_status_widget.py"
 )
+_GIT_WIDGET_SOURCE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "git_widget.py"
+)
 _TAB_BAR_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tab_bar.py")
 _THEME_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "theme.py")
 
@@ -24,6 +27,11 @@ def _read_alarm_widget_source():
 
 def _read_window_status_widget_source():
     with open(_WINDOW_STATUS_WIDGET_SOURCE_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def _read_git_widget_source():
+    with open(_GIT_WIDGET_SOURCE_PATH, "r", encoding="utf-8") as f:
         return f.read()
 
 
@@ -213,6 +221,7 @@ def _prompt_url(line_edit):
 {theme_source}
 {alarm_widget_source}
 {window_status_widget_source}
+{git_widget_source}
 class {class_name}(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -278,6 +287,8 @@ def _create_lines(
         lines.append(f'self.{widget_id} = AlarmClockPanel({parent_var})')
     elif kind == "windowstatus":
         lines.append(f'self.{widget_id} = WindowStatusPanel({parent_var})')
+    elif kind == "gitpanel":
+        lines.append(f'self.{widget_id} = GitPanel({parent_var})')
     elif kind == "hline":
         lines.append(f'self.{widget_id} = QFrame({parent_var})')
         lines.append(f'self.{widget_id}.setFrameShape(QFrame.Shape.HLine)')
@@ -337,6 +348,9 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
     )
     uses_window_status = any(
         entry["kind"] == "windowstatus" for tab in tabs for entry in tab["entries"].values()
+    )
+    uses_git_panel = any(
+        entry["kind"] == "gitpanel" for tab in tabs for entry in tab["entries"].values()
     )
 
     for tab_index, tab in enumerate(tabs):
@@ -427,6 +441,7 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
         window_status_widget_source=(
             _read_window_status_widget_source() if uses_window_status else ""
         ),
+        git_widget_source=_read_git_widget_source() if uses_git_panel else "",
     )
     if method_blocks:
         source += "\n" + "\n".join(method_blocks)

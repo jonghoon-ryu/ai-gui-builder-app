@@ -81,6 +81,20 @@ Windows 전용 기능이라 다른 OS로 내보낸 앱에서는 동작하지 않
 (데이터 자체는 정상 — `.text()`로는 전체 경로가 그대로 나옴, 순수 렌더링 버그). `QTableWidgetItem`
 대신 그 셀에 `QLabel`을 `setCellWidget`으로 넣는 방식으로 우회함.
 
+## git 위젯 ("git" 탭)
+
+local/remote 저장소를 최대 6쌍까지 등록해두고(2열×3행) 각각 HEAD 커밋 비교("비교" 버튼,
+`git ls-remote`만 써서 로컬 상태를 안 건드림) + 비교 결과를 초록/빨강으로 보여주는 "비교결과" 상태
+버튼(클릭하면 마지막 결과 다시 봄) + 커밋 안 된 변경 파일의 원본/현재 버전을 백업하는 "stash" 버튼을
+제공. "local drive 검색" 버튼을 누르면 C/D/E를 훑어서 찾은 git 저장소로 6개 local 칸을 (기존 값을
+덮어써서) 채움(최대 6개, 백그라운드 스레드). "전체 status check" 버튼을 누르면 remote/local이 둘 다
+입력된 상자를 전부 한 번에 비교(백그라운드 스레드) - 두 버튼은 서로 독립적임(검색은 local만 채우고
+비교는 안 함, status check는 검색을 하지 않고 이미 채워진 것만 비교함). `git_widget.py`에 구현
+(빌더/standalone 양쪽에서 같은 소스 파일 그대로 사용, 실행 환경에
+`git` CLI 필요). 6쌍의 remote/local 입력값은 `git_panel_state.json`에 자동 저장됨. 2026-08-12 구현
+완료 (드라이브 검색과 상태 비교 기능이 한 버튼에 합쳐졌다가, 최종적으로 "local drive 검색"/"전체
+status check" 두 개의 독립된 버튼으로 정리됨).
+
 ## 브레인스토밍한 추가 아이디어 (미반영, 검토 대기)
 
 "윈도우 현황" 탭 1차 구현 후 제안했던 목록 중 사용자가 고른 항목(경고 색상/상위 프로세스/폴더
@@ -96,7 +110,7 @@ Windows 전용 기능이라 다른 OS로 내보낸 앱에서는 동작하지 않
 
 ## 현재 탭 구성 (실사용 중인 내용)
 
-- **git** — 비어있음
+- **git** — git 위젯 1개 (local/remote 비교·stash 6쌍 + 전체 status check)
 - **wiki** — URL/디렉토리 입력창 + "가져와서 md로 변환" 버튼(웹 문서를 md로 저장, 이미지는 라디오
   버튼으로 자동/claude 분류 선택) + 라디오 버튼 2개
 - **쉬었다 합시다** — 노래 링크 버튼 3개(유튜브 열기) + 구분선
@@ -127,5 +141,6 @@ Windows 전용 기능이라 다른 OS로 내보낸 앱에서는 동작하지 않
 `main.py`(진입점) · `palette_window.py`(팔레트) · `canvas_window.py`(캔버스/탭/위젯 로직 대부분) ·
 `behavior_dialog.py`(동작 설정 다이얼로그) · `ai_client.py`(claude CLI 호출, 코드 생성 프롬프트) ·
 `code_binder.py`(화이트리스트 함수 + 안전한 exec) · `exporter.py`(standalone 내보내기) ·
-`alarm_widget.py`(알람 시계) · `window_status_widget.py`(윈도우 현황) · `theme.py`(빌더 전역 QSS) ·
+`alarm_widget.py`(알람 시계) · `window_status_widget.py`(윈도우 현황) · `git_widget.py`(git) ·
+`tab_bar.py`(탭바) · `theme.py`(빌더 전역 QSS) ·
 `builder_state.json`(자동 저장되는 현재 작업 상태) · `md_files/`(문서) · `standalone/`(내보내기 결과물).
