@@ -825,6 +825,8 @@ class CanvasPage(QWidget):
         behavior_action = (
             menu.addAction("동작 설정...") if entry["kind"] in SIGNAL_BY_KIND else None
         )
+        bring_front_action = menu.addAction("맨 앞으로")
+        send_back_action = menu.addAction("맨 뒤로")
         color_action = menu.addAction("색깔 변경")
         rename_action = menu.addAction("이름 변경") if hasattr(widget, "setText") else None
         font_action = menu.addAction("폰트 설정") if entry["kind"] in TEXTBOX_KINDS else None
@@ -841,6 +843,10 @@ class CanvasPage(QWidget):
         chosen = menu.exec(widget.mapToGlobal(pos))
         if behavior_action is not None and chosen == behavior_action:
             self._open_behavior_dialog(widget_id)
+        elif chosen == bring_front_action:
+            self._bring_widget_to_front(widget_id)
+        elif chosen == send_back_action:
+            self._send_widget_to_back(widget_id)
         elif chosen == color_action:
             self._pick_widget_color(widget_id)
         elif rename_action is not None and chosen == rename_action:
@@ -853,6 +859,25 @@ class CanvasPage(QWidget):
             self._add_radio_option(widget_id)
         elif remove_option_action is not None and chosen == remove_option_action:
             self._remove_widget(widget_id)
+
+    def _bring_widget_to_front(self, widget_id):
+        entry = self.entries.pop(widget_id, None)
+        if entry is None:
+            return
+        entry["widget"].raise_()
+        # `entries` is iterated in insertion order by both _save_state and
+        # _restore_from_state (widgets are recreated in that order, and each
+        # new child paints over earlier siblings by default) - moving this
+        # entry to the end keeps the saved widget order matching the actual
+        # on-screen stacking order after a raise_().
+        self.entries[widget_id] = entry
+
+    def _send_widget_to_back(self, widget_id):
+        entry = self.entries.pop(widget_id, None)
+        if entry is None:
+            return
+        entry["widget"].lower()
+        self.entries = {widget_id: entry, **self.entries}
 
     def _pick_widget_color(self, widget_id):
         entry = self.entries.get(widget_id)
