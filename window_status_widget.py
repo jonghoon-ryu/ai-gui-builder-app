@@ -481,7 +481,7 @@ class WindowStatusPanel(QWidget):
     empty, and buttons for a top-process snapshot, folder size breakdown,
     startup program list, and the system environment-variables editor."""
 
-    REFRESH_INTERVAL_MS = 3000
+    REFRESH_INTERVAL_MS = 8000
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -558,7 +558,18 @@ class WindowStatusPanel(QWidget):
         self._refresh()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
+        # Started/stopped from showEvent/hideEvent instead of here, so the
+        # periodic refresh only runs while this tab is actually the one
+        # being looked at, not for every hidden tab in the background.
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._refresh()
         self._timer.start(self.REFRESH_INTERVAL_MS)
+
+    def hideEvent(self, event):
+        self._timer.stop()
+        super().hideEvent(event)
 
     @staticmethod
     def _make_bold(label):
