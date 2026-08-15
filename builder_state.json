@@ -18,7 +18,7 @@
           "instruction": "",
           "code": "",
           "text": null,
-          "color": null,
+          "color": "#e7e7e7",
           "font_family": null,
           "font_size": null,
           "group": null,
@@ -478,7 +478,7 @@
     },
     {
       "title": "설명",
-      "color": null,
+      "color": "#f8ecf8",
       "widgets": [
         {
           "id": "button_1",
