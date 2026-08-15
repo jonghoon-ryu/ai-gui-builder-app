@@ -1,11 +1,16 @@
+import os
 import shutil
 import sys
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from canvas_window import CanvasWindow, get_saved_window_size
 from palette_window import PaletteWindow
 from theme import APP_STYLESHEET
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_ICON_PATH = os.path.join(BASE_DIR, "app_icon.ico")
 
 CM_PER_INCH = 2.54
 DEFAULT_DPI = 96
@@ -18,6 +23,8 @@ def cm_to_px(cm, dpi):
 def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(APP_STYLESHEET)
+    if os.path.exists(APP_ICON_PATH):
+        app.setWindowIcon(QIcon(APP_ICON_PATH))
 
     screen = app.primaryScreen()
     dpi_x = screen.physicalDotsPerInchX() if screen else DEFAULT_DPI

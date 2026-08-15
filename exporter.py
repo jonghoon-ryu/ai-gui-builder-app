@@ -1,3 +1,4 @@
+import base64
 import os
 import re
 import shutil
@@ -23,6 +24,22 @@ _GVF_WIDGET_SOURCE_PATH = os.path.join(
 )
 _TAB_BAR_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tab_bar.py")
 _THEME_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "theme.py")
+_APP_ICON_ICO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon.ico")
+_APP_ICON_PNG_PATHS = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon_32.png"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon_128.png"),
+]
+
+
+def _read_app_icon_base64_list():
+    """Base64 of each pre-rendered icon PNG, embedded (not referenced by path)
+    so the exported .py keeps working when copied anywhere with only PySide6
+    installed - see CLAUDE.md's export guarantee."""
+    result = []
+    for path in _APP_ICON_PNG_PATHS:
+        with open(path, "rb") as f:
+            result.append(base64.b64encode(f.read()).decode("ascii"))
+    return result
 
 
 def _read_alarm_widget_source():
@@ -61,7 +78,8 @@ def _read_theme_source():
     with open(_THEME_SOURCE_PATH, "r", encoding="utf-8") as f:
         return f.read()
 
-HEADER_TEMPLATE = '''import os
+HEADER_TEMPLATE = '''import base64
+import os
 import shutil
 import subprocess
 import sys
@@ -74,7 +92,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from markdownify import markdownify as _html_to_markdown
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QFont
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -94,6 +112,21 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+_APP_ICON_PNGS_BASE64 = {app_icon_pngs_base64!r}
+
+
+def _app_icon():
+    """Builds a multi-resolution QIcon from the embedded PNGs (base64, not a
+    file path) so the exported .py keeps showing a real icon even when copied
+    somewhere without the builder's other files - see CLAUDE.md's export
+    guarantee."""
+    icon = QIcon()
+    for data_b64 in _APP_ICON_PNGS_BASE64:
+        pixmap = QPixmap()
+        pixmap.loadFromData(base64.b64decode(data_b64))
+        icon.addPixmap(pixmap)
+    return icon
 
 
 def open_url(url):
@@ -456,6 +489,7 @@ FOOTER_TEMPLATE = '''
 def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(APP_STYLESHEET)
+    app.setWindowIcon(_app_icon())
     window = {class_name}()
     window.show()
     sys.exit(app.exec())
@@ -705,6 +739,7 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
         ),
         git_widget_source=_read_git_widget_source() if uses_git_panel else "",
         gvf_widget_source=_read_gvf_widget_source() if uses_gvf_panel else "",
+        app_icon_pngs_base64=_read_app_icon_base64_list(),
     )
     if method_blocks:
         source += "\n" + "\n".join(method_blocks)
@@ -737,6 +772,7 @@ def build_exe(tabs, width, height, dest_exe_path, class_name="GeneratedApp", win
         dist_dir = os.path.join(tmp_dir, "dist")
         work_dir = os.path.join(tmp_dir, "build")
 
+        icon_args = ["--icon", _APP_ICON_ICO_PATH] if os.path.exists(_APP_ICON_ICO_PATH) else []
         try:
             result = subprocess.run(
                 [
@@ -746,6 +782,7 @@ def build_exe(tabs, width, height, dest_exe_path, class_name="GeneratedApp", win
                     "--workpath", work_dir,
                     "--specpath", tmp_dir,
                     "--name", exe_stem,
+                    *icon_args,
                     src_path,
                 ],
                 capture_output=True,
