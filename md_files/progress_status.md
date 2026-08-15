@@ -218,6 +218,36 @@ status check" 두 개의 독립된 버튼으로 정리됨).
 존재하지 않는 기능을 언급하는 문구가 남을 뻔함 - 실제로 내보내기 테스트 중 `assert '폴더 용량'
 not in src`가 처음엔 실패해서 발견하고 고침).
 
+## 팝업/다이얼로그가 탭·위젯 색을 상속하던 버그 수정 (2026-08-15)
+
+"각 탭에서 창을 열면(예: 설명 탭의 '전체 앱 설명') 이전에 있던 바탕색이 그대로 뜬다"는 리포트로
+근본 원인을 찾음: 색이 지정된 탭 페이지/위젯에 `setStyleSheet(f"background-color: {color};")`처럼
+**바로 값(선택자 없는) 스타일시트**를 주면, Qt는 이를 `* {{ background-color: X }}`로 취급해서
+그 위젯의 모든 자손에 상속시킴 — 자손이 실제로는 별도 top-level 창(QDialog/QMessageBox 등)이어도
+Qt의 스타일시트 상속은 "같은 OS 창인가"가 아니라 **위젯 부모-자식 관계**를 따라가기 때문에 그대로
+전파됨. 헤드리스로 실제 재현(색 있는 페이지 위에서 `show_text_dialog`를 띄우면 다이얼로그 배경이
+탭 색 그대로 나옴)하고, 여러 해결책을 직접 실험/비교해서 최종안을 정함:
+- app 전역 스타일시트에 `QDialog {{ ... }}` 규칙을 추가하는 방법 → 실패 (조상의 스타일시트가
+  앱 전역 스타일시트보다 우선순위가 높아서 안 먹힘)
+- 부모 위젯 스타일시트를 타입 선택자로 스코프(`QPushButton {{ background-color: X }}`) → 위젯
+  자신과 다이얼로그 배경은 고쳐지지만, 그 다이얼로그 **내부에 같은 타입의 위젯**(예: 색 있는
+  버튼에서 연 팝업 안의 "확인" 버튼)까지 색이 새는 부작용 발견 → 기각
+- **id 선택자로 스코프**(`#objectName {{ background-color: X }}`, 위젯마다 고유
+  objectName 부여) → 자기 자신의 배경은 정확히 칠해지고, 다이얼로그/QMessageBox 등 자손에는
+  전혀 상속되지 않으며, 같은 타입의 내부 위젯도 영향 없음 — 채택.
+
+`canvas_window.py`에 `_apply_scoped_background(widget, color_hex)` 헬퍼를 만들어 위젯 색 지정
+(`_create_widget`, "색깔 변경" 메뉴)과 탭 바탕색 지정(`_restore_from_state`, "바탕색" 메뉴) 4곳
+전부 이걸로 통일함. `exporter.py`도 같은 방식(각 위젯/페이지에 `setObjectName` 후 id 선택자
+스타일시트)으로 미러링해서 standalone 내보내기도 동일하게 고쳐짐. `code_binder.py`/`exporter.py`의
+`show_text_dialog` 자체는 건드릴 필요 없었음(원인이 다이얼로그 쪽이 아니라 색을 주는 쪽이었으므로
+소스 쪽만 고치면 모든 다이얼로그·QMessageBox·QInputDialog가 한 번에 해결됨 — 처음에는 개별
+다이얼로그마다 배경을 강제 지정하는 방식으로 13곳을 고쳤다가, 이 근본 원인을 찾은 뒤 전부
+되돌리고(git checkout) 이 방식으로 교체함, `QMessageBox`/`QInputDialog`는애초에 static
+메서드라 개별 패치가 불가능했던 것도 이 방식을 택한 이유). 헤드리스로 실제 `builder_state.json`의
+wiki 탭(#f9f06b) 위 실제 버튼(#aaaaff)에 물린 `QMessageBox`가 정확히 기본 배경(#f4f5f8)으로
+뜨는 것까지 확인함.
+
 ## 확인↔휴지통,temp 가로 간격을 자원사용률↔확인 세로 간격과 맞춤 (2026-08-15)
 
 "확인" 박스와 "휴지통, temp 파일 제거" 박스 사이 가로 간격(`bottom_row.setSpacing`, 기존 8px)을

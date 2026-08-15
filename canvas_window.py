@@ -51,6 +51,22 @@ def _widget_text(widget):
     return widget.text() if hasattr(widget, "text") else None
 
 
+def _apply_scoped_background(widget, color_hex):
+    """Colors `widget`'s own background without leaking into any dialog a
+    click handler might open on/under it. A bare `setStyleSheet("background-
+    color: X")` is treated by Qt as `* { background-color: X }`, which
+    cascades into descendants - including separate top-level windows like
+    QDialog/QMessageBox, since Qt's stylesheet cascade follows the *widget*
+    parent chain regardless of "is it its own window". Scoping by an
+    id-selector (rather than a type-selector) additionally avoids the color
+    leaking into same-type widgets nested *inside* such a dialog (e.g. a
+    QPushButton "확인" button inside a popup opened from a colored
+    QPushButton) - a type-selector rule would still match those."""
+    object_name = widget.objectName() or f"w{id(widget)}"
+    widget.setObjectName(object_name)
+    widget.setStyleSheet(f"#{object_name} {{ background-color: {color_hex}; }}")
+
+
 def _save_state(tabs_widget, window_size=None):
     if window_size is None:
         # Preserve whatever window size was last saved instead of wiping it out.
@@ -442,7 +458,7 @@ class CanvasPage(QWidget):
             widget.setText(text)
         if color:
             widget.setAttribute(Qt.WA_StyledBackground, True)
-            widget.setStyleSheet(f"background-color: {color};")
+            _apply_scoped_background(widget, color)
         if font_family or font_size:
             font = widget.font()
             if font_family:
@@ -706,7 +722,7 @@ class CanvasPage(QWidget):
             return
 
         widget.setAttribute(Qt.WA_StyledBackground, True)
-        widget.setStyleSheet(f"background-color: {color.name()};")
+        _apply_scoped_background(widget, color.name())
         entry["color"] = color.name()
 
     def _rename_widget(self, widget_id):
@@ -821,7 +837,7 @@ class CanvasTabs(QTabWidget):
             index = self.addTab(page, tab_data.get("title") or "tab")
             color_hex = tab_data.get("color")
             if color_hex:
-                page.setStyleSheet(f"background-color: {color_hex};")
+                _apply_scoped_background(page, color_hex)
                 self.tabBar().set_tab_color(index, QColor(color_hex))
 
             self._tab_counter += 1
@@ -904,7 +920,7 @@ class CanvasTabs(QTabWidget):
         if not color.isValid():
             return
 
-        page.setStyleSheet(f"background-color: {color.name()};")
+        _apply_scoped_background(page, color.name())
         self.tabBar().set_tab_color(index, color)
 
 

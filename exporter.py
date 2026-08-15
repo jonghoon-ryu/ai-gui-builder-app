@@ -507,8 +507,17 @@ def _create_lines(
         escaped = text.replace('\\', '\\\\').replace('"', '\\"')
         lines.append(f'self.{widget_id}.setText("{escaped}")')
     if color:
+        # Scoped by object name (id-selector), not a bare declaration or a
+        # type-selector, so this color doesn't cascade into any dialog a
+        # click handler might open on/under this widget - see the matching
+        # comment on canvas_window.py's _apply_scoped_background. A bare
+        # declaration cascades into everything; a type-selector would still
+        # leak into same-type widgets nested *inside* such a dialog (e.g. a
+        # QPushButton "확인" button inside a popup opened from a colored
+        # QPushButton).
         lines.append(f'self.{widget_id}.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)')
-        lines.append(f'self.{widget_id}.setStyleSheet("background-color: {color};")')
+        lines.append(f'self.{widget_id}.setObjectName("{widget_id}")')
+        lines.append(f'self.{widget_id}.setStyleSheet("#{widget_id} {{ background-color: {color}; }}")')
     if font_family and font_size:
         escaped_family = font_family.replace('\\', '\\\\').replace('"', '\\"')
         lines.append(f'self.{widget_id}.setFont(QFont("{escaped_family}", {font_size}))')
@@ -565,7 +574,11 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
         # bar's height to fit it, since nothing else constrains the window.
         if tab.get("color"):
             init_lines.append(f'{page_var}.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)')
-            init_lines.append(f'{page_var}.setStyleSheet("background-color: {tab["color"]};")')
+            # Scoped by object name (see the comment on the widget-color
+            # case above) so this color doesn't cascade into dialogs opened
+            # from buttons/panels living on this tab.
+            init_lines.append(f'{page_var}.setObjectName("{page_var}")')
+            init_lines.append(f'{page_var}.setStyleSheet("#{page_var} {{ background-color: {tab["color"]}; }}")')
         init_lines.append("")
 
         radio_groups = {}  # group id -> [(full_id, is_checked), ...]
