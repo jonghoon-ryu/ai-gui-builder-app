@@ -63,8 +63,8 @@ QListWidget::item:selected {
 QGroupBox {
     border: 1px solid #ced2db;
     border-radius: 8px;
-    margin-top: 10px;
-    padding-top: 12px;
+    margin-top: 8px;
+    padding-top: 6px;
     font-weight: bold;
 }
 QGroupBox::title {

@@ -395,32 +395,6 @@ def get_top_processes(limit=5, sample_interval=0.3):
     return cpu_results[:limit], mem_results[:limit]
 
 
-# ---- Folder size breakdown --------------------------------------------
-
-def get_folder_sizes():
-    """Total size of a few well-known "grows silently" folders (Temp,
-    Downloads). Walks the filesystem directly - can take a moment for very
-    large folders, which is why this is button-triggered, not on a timer."""
-    targets = [
-        ("Temp", os.environ.get("TEMP") or os.environ.get("TMP") or ""),
-        ("다운로드", os.path.join(os.path.expanduser("~"), "Downloads")),
-    ]
-    results = []
-    for label, path in targets:
-        if not path or not os.path.isdir(path):
-            results.append({"label": label, "path": path, "size": None})
-            continue
-        total = 0
-        for root, _dirs, files in os.walk(path):
-            for name in files:
-                try:
-                    total += os.path.getsize(os.path.join(root, name))
-                except OSError:
-                    pass
-        results.append({"label": label, "path": path, "size": total})
-    return results
-
-
 # ---- Temp folder cleanup -------------------------------------------------
 
 def get_temp_folder_path():
@@ -430,7 +404,7 @@ def get_temp_folder_path():
 def get_temp_folder_summary():
     """Returns (file_count, total_size_bytes) for every file under the Temp
     folder, recursively. Walks the filesystem directly - can take a moment
-    for a large Temp folder, same tradeoff as get_folder_sizes."""
+    for a large Temp folder."""
     path = get_temp_folder_path()
     if not path or not os.path.isdir(path):
         return 0, 0
@@ -568,25 +542,30 @@ class WindowStatusPanel(QWidget):
         self._next_grid_row = 0
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 10, 12, 10)
-        outer.setSpacing(8)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(6)
 
         # ---- 시스템 정보 ----
         sys_group = QGroupBox("시스템 정보")
         sys_layout = QVBoxLayout(sys_group)
+        sys_layout.setContentsMargins(10, 6, 10, 8)
+        sys_layout.setSpacing(6)
         self.os_label = QLabel()
         sys_layout.addWidget(self.os_label)
         self.cpu_model_label = QLabel()
         sys_layout.addWidget(self.cpu_model_label)
         outer.addWidget(sys_group)
+        outer.addStretch(1)
 
         # ---- 자원 사용률 ----
         resource_group = QGroupBox("자원 사용률")
         resource_layout = QVBoxLayout(resource_group)
+        resource_layout.setContentsMargins(10, 6, 10, 8)
+        resource_layout.setSpacing(4)
 
         self.info_grid = QGridLayout()
         self.info_grid.setHorizontalSpacing(8)
-        self.info_grid.setVerticalSpacing(4)
+        self.info_grid.setVerticalSpacing(10)
         self.info_grid.setColumnMinimumWidth(0, 90)
         self.info_grid.setColumnStretch(1, 1)
         resource_layout.addLayout(self.info_grid)
@@ -596,75 +575,75 @@ class WindowStatusPanel(QWidget):
 
         disk_title = QLabel("디스크")
         self._make_bold(disk_title)
-        resource_layout.addWidget(disk_title)
-
-        self.disk_grid = QGridLayout()
-        self.disk_grid.setHorizontalSpacing(8)
-        self.disk_grid.setVerticalSpacing(4)
-        self.disk_grid.setColumnMinimumWidth(0, 90)
-        self.disk_grid.setColumnStretch(1, 1)
-        resource_layout.addLayout(self.disk_grid)
+        disk_title_row = self._next_grid_row
+        self._next_grid_row += 1
+        self.info_grid.addWidget(disk_title, disk_title_row, 0, 1, 3)
 
         outer.addWidget(resource_group)
+        outer.addStretch(1)
 
-        # ---- 확인 ----
+        # ---- 확인 / 휴지통, temp 파일 제거 (자원 사용률 밑에 절반씩) ----
+        bottom_row = QHBoxLayout()
+        # 자원 사용률↔확인 사이의 세로 간격(현재 캔버스 크기 기준 약 36px)과 맞춘 값.
+        bottom_row.setSpacing(36)
+
         check_group = QGroupBox("확인")
-        check_layout = QHBoxLayout(check_group)
+        check_layout = QVBoxLayout(check_group)
+        check_layout.setContentsMargins(6, 6, 6, 8)
+        check_layout.setSpacing(6)
         self.top_processes_button = QPushButton("상위 프로세스")
         self.top_processes_button.clicked.connect(self._show_top_processes)
-        check_layout.addWidget(self.top_processes_button)
-        self.folder_sizes_button = QPushButton("폴더 용량")
-        self.folder_sizes_button.clicked.connect(self._show_folder_sizes)
-        check_layout.addWidget(self.folder_sizes_button)
         self.startup_button = QPushButton("시작 프로그램 목록")
         self.startup_button.clicked.connect(self._show_startup_programs)
-        check_layout.addWidget(self.startup_button)
         self.env_vars_button = QPushButton("시스템 변수 바로보기")
         self.env_vars_button.clicked.connect(open_environment_variables_dialog)
-        check_layout.addWidget(self.env_vars_button)
-        outer.addWidget(check_group)
+        for button in (self.top_processes_button, self.startup_button, self.env_vars_button):
+            button.setFixedHeight(28)
+            check_layout.addWidget(button)
+        # 확인 박스는 버튼이 필요로 하는 만큼만 차지하고(고정 폭), 남는 가로 공간은
+        # 전부 옆의 "휴지통, temp 파일 제거" 박스로 가도록 함(한 줄 버튼들이 들어갈
+        # 자리가 더 필요해서).
+        bottom_row.addWidget(check_group)
 
         # ---- 휴지통, temp 파일 제거 ----
+        # 휴지통/temp 두 줄을 같은 QGridLayout에 넣어서 "목록"/비우기 버튼 컬럼이
+        # 라벨 길이와 무관하게 항상 같은 x 위치에 정렬되도록 함 (CPU/디스크 막대를
+        # info_grid로 합친 것과 같은 이유).
         cleanup_group = QGroupBox("휴지통, temp 파일 제거")
-        cleanup_layout = QVBoxLayout(cleanup_group)
+        cleanup_layout = QGridLayout(cleanup_group)
+        cleanup_layout.setContentsMargins(6, 6, 6, 8)
+        cleanup_layout.setHorizontalSpacing(6)
+        cleanup_layout.setVerticalSpacing(4)
+        cleanup_layout.setColumnStretch(1, 1)
 
-        bin_row = QHBoxLayout()
         bin_icon_label = QLabel()
         bin_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
         bin_icon_label.setPixmap(bin_icon.pixmap(24, 24))
-        bin_row.addWidget(bin_icon_label)
+        cleanup_layout.addWidget(bin_icon_label, 0, 0)
         self.bin_label = QLabel("휴지통: 확인 중...")
-        bin_row.addWidget(self.bin_label, 1)
+        cleanup_layout.addWidget(self.bin_label, 0, 1)
         self.bin_list_button = QPushButton("목록")
         self.bin_list_button.clicked.connect(self._show_recycle_bin_list)
-        bin_row.addWidget(self.bin_list_button)
+        cleanup_layout.addWidget(self.bin_list_button, 0, 2)
         self.bin_empty_button = QPushButton("휴지통 비우기")
         self.bin_empty_button.clicked.connect(self._empty_recycle_bin)
-        bin_row.addWidget(self.bin_empty_button)
-        cleanup_layout.addLayout(bin_row)
+        cleanup_layout.addWidget(self.bin_empty_button, 0, 3)
 
-        temp_title = QLabel("temp 파일")
-        self._make_bold(temp_title)
-        cleanup_layout.addWidget(temp_title)
-
-        temp_row = QHBoxLayout()
         temp_icon_label = QLabel()
         temp_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
         temp_icon_label.setPixmap(temp_icon.pixmap(24, 24))
-        temp_row.addWidget(temp_icon_label)
+        cleanup_layout.addWidget(temp_icon_label, 1, 0)
         self.temp_label = QLabel("temp 파일: 확인 중...")
-        temp_row.addWidget(self.temp_label, 1)
+        cleanup_layout.addWidget(self.temp_label, 1, 1)
         self.temp_list_button = QPushButton("목록")
         self.temp_list_button.clicked.connect(self._show_temp_files)
-        temp_row.addWidget(self.temp_list_button)
+        cleanup_layout.addWidget(self.temp_list_button, 1, 2)
         self.temp_empty_button = QPushButton("temp 파일 비우기")
         self.temp_empty_button.clicked.connect(self._empty_temp_folder)
-        temp_row.addWidget(self.temp_empty_button)
-        cleanup_layout.addLayout(temp_row)
+        cleanup_layout.addWidget(self.temp_empty_button, 1, 3)
 
-        outer.addWidget(cleanup_group)
-
-        outer.addStretch()
+        bottom_row.addWidget(cleanup_group, 1)
+        outer.addLayout(bottom_row)
 
         self._refresh()
         self._refresh_temp_summary()
@@ -704,6 +683,7 @@ class WindowStatusPanel(QWidget):
         bar = QProgressBar()
         bar.setRange(0, 100)
         bar.setTextVisible(False)
+        bar.setFixedHeight(12)
         self.info_grid.addWidget(bar, row, 1)
         value_label = QLabel("0%")
         value_label.setMinimumWidth(180)
@@ -743,13 +723,14 @@ class WindowStatusPanel(QWidget):
                 bar = QProgressBar()
                 bar.setRange(0, 100)
                 bar.setTextVisible(False)
+                bar.setFixedHeight(12)
                 value_label = QLabel()
-                value_label.setMinimumWidth(200)
+                value_label.setMinimumWidth(180)
                 row = self._next_grid_row
                 self._next_grid_row += 1
-                self.disk_grid.addWidget(label, row, 0)
-                self.disk_grid.addWidget(bar, row, 1)
-                self.disk_grid.addWidget(value_label, row, 2)
+                self.info_grid.addWidget(label, row, 0)
+                self.info_grid.addWidget(bar, row, 1)
+                self.info_grid.addWidget(value_label, row, 2)
                 self._disk_rows[drive] = (bar, value_label, (label, bar, value_label))
 
             bar, value_label, _widgets = self._disk_rows[drive]
@@ -931,37 +912,6 @@ class WindowStatusPanel(QWidget):
             mem_table.setItem(row, 1, QTableWidgetItem(str(proc["pid"])))
             mem_table.setItem(row, 2, QTableWidgetItem(_format_bytes(proc["memory"])))
         layout.addWidget(mem_table)
-
-        close_button = QPushButton("닫기")
-        close_button.clicked.connect(dialog.accept)
-        layout.addWidget(close_button)
-
-        dialog.exec()
-
-    def _show_folder_sizes(self):
-        self.setCursor(Qt.CursorShape.WaitCursor)
-        try:
-            results = get_folder_sizes()
-        finally:
-            self.unsetCursor()
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("폴더별 용량")
-        dialog.resize(520, 200)
-        layout = QVBoxLayout(dialog)
-
-        table = QTableWidget(len(results), 3)
-        table.setHorizontalHeaderLabels(["폴더", "경로", "용량"])
-        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        for row, item in enumerate(results):
-            table.setItem(row, 0, QTableWidgetItem(item["label"]))
-            path_label = QLabel(item["path"] or "-")
-            path_label.setContentsMargins(4, 0, 4, 0)
-            table.setCellWidget(row, 1, path_label)
-            size_text = _format_bytes(item["size"]) if item["size"] is not None else "확인 불가"
-            table.setItem(row, 2, QTableWidgetItem(size_text))
-        layout.addWidget(table)
 
         close_button = QPushButton("닫기")
         close_button.clicked.connect(dialog.accept)
