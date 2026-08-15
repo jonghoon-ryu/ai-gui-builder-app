@@ -1,7 +1,7 @@
 {
   "window": {
     "width": 821,
-    "height": 536
+    "height": 497
   },
   "tabs": [
     {
@@ -22,7 +22,8 @@
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": false
+          "no_border": false,
+          "checked": null
         }
       ]
     },
@@ -44,7 +45,8 @@
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": false
+          "no_border": false,
+          "checked": null
         },
         {
           "id": "dirbox_1",
@@ -60,7 +62,8 @@
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": false
+          "no_border": false,
+          "checked": null
         },
         {
           "id": "button_1",
@@ -76,7 +79,8 @@
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": false
+          "no_border": false,
+          "checked": null
         },
         {
           "id": "radiobutton_1",
@@ -92,7 +96,8 @@
           "font_family": null,
           "font_size": null,
           "group": "radiobutton_1",
-          "no_border": false
+          "no_border": false,
+          "checked": true
         },
         {
           "id": "radiobutton_2",
@@ -108,7 +113,8 @@
           "font_family": null,
           "font_size": null,
           "group": "radiobutton_1",
-          "no_border": false
+          "no_border": false,
+          "checked": false
         },
         {
           "id": "lineedit_1",
@@ -124,7 +130,8 @@
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": true
+          "no_border": true,
+          "checked": null
         },
         {
           "id": "lineedit_2",
@@ -140,7 +147,8 @@
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": true
+          "no_border": true,
+          "checked": null
         }
       ]
     },
@@ -162,7 +170,8 @@
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": false
+          "no_border": false,
+          "checked": null
         }
       ]
     },
@@ -184,141 +193,360 @@
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": false
+          "no_border": false,
+          "checked": null
         }
       ]
     },
     {
-      "title": "쉬었다 합시다",
-      "color": "#f4e8e8",
+      "title": "link",
+      "color": null,
       "widgets": [
-        {
-          "id": "button_1",
-          "kind": "button",
-          "x": 65,
-          "y": 107,
-          "width": 140,
-          "height": 23,
-          "instruction": "https://youtu.be/_lKiuqlg4ro?si=BnGTCMSJ1Nd_5VWC  에 접속",
-          "code": "def on_event(self):\n    open_url(\"https://youtu.be/_lKiuqlg4ro?si=BnGTCMSJ1Nd_5VWC\")",
-          "text": "아름다운 나라 - 하윤주",
-          "color": "#dc8add",
-          "font_family": null,
-          "font_size": null,
-          "group": null,
-          "no_border": false
-        },
         {
           "id": "lineedit_1",
           "kind": "lineedit",
-          "x": 106,
-          "y": 37,
-          "width": 55,
-          "height": 23,
+          "x": 20,
+          "y": 20,
+          "width": 230,
+          "height": 26,
           "instruction": "",
           "code": "",
-          "text": "  노래",
-          "color": "#8ff0a4",
+          "text": "claude",
+          "color": "#ffa348",
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": false
-        },
-        {
-          "id": "button_2",
-          "kind": "button",
-          "x": 65,
-          "y": 163,
-          "width": 116,
-          "height": 23,
-          "instruction": "https://youtu.be/3smn8BRrKKM?si=9YymxC7vznMOU2vE  에 접속",
-          "code": "def on_event(self):\n    open_url(\"https://youtu.be/3smn8BRrKKM?si=9YymxC7vznMOU2vE\")",
-          "text": "섬집 아기 - 하윤주",
-          "color": "#ffbe6f",
-          "font_family": null,
-          "font_size": null,
-          "group": null,
-          "no_border": false
-        },
-        {
-          "id": "button_3",
-          "kind": "button",
-          "x": 65,
-          "y": 218,
-          "width": 93,
-          "height": 21,
-          "instruction": "https://youtu.be/QvbvibmiEmM?si=iI5yTWsD07JMID-a 에 접속",
-          "code": "def on_event(self):\n    open_url(\"https://youtu.be/QvbvibmiEmM?si=iI5yTWsD07JMID-a\")",
-          "text": "아스피린 - 걸",
-          "color": "#99c1f1",
-          "font_family": null,
-          "font_size": null,
-          "group": null,
-          "no_border": false
-        },
-        {
-          "id": "hline_1",
-          "kind": "hline",
-          "x": 28,
-          "y": 75,
-          "width": 486,
-          "height": 21,
-          "instruction": "",
-          "code": "",
-          "text": null,
-          "color": null,
-          "font_family": null,
-          "font_size": null,
-          "group": null,
-          "no_border": false
-        },
-        {
-          "id": "vline_1",
-          "kind": "vline",
-          "x": 246,
-          "y": 26,
-          "width": 29,
-          "height": 374,
-          "instruction": "",
-          "code": "",
-          "text": null,
-          "color": null,
-          "font_family": null,
-          "font_size": null,
-          "group": null,
-          "no_border": false
+          "no_border": false,
+          "checked": null
         },
         {
           "id": "lineedit_2",
           "kind": "lineedit",
-          "x": 371,
-          "y": 34,
-          "width": 50,
-          "height": 24,
+          "x": 280,
+          "y": 20,
+          "width": 230,
+          "height": 26,
           "instruction": "",
           "code": "",
-          "text": "   만화",
+          "text": "opencode",
+          "color": "#57e389",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "lineedit_3",
+          "kind": "lineedit",
+          "x": 540,
+          "y": 20,
+          "width": 230,
+          "height": 26,
+          "instruction": "",
+          "code": "",
+          "text": "C++",
+          "color": "#62a0ea",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "vline_1",
+          "kind": "vline",
+          "x": 255,
+          "y": 15,
+          "width": 20,
+          "height": 245,
+          "instruction": "",
+          "code": "",
+          "text": null,
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "vline_2",
+          "kind": "vline",
+          "x": 515,
+          "y": 15,
+          "width": 20,
+          "height": 245,
+          "instruction": "",
+          "code": "",
+          "text": null,
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_1",
+          "kind": "button",
+          "x": 20,
+          "y": 80,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://claude.ai 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://claude.ai\")",
+          "text": "Claude 웹앱",
           "color": "#ffbe6f",
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": false
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_2",
+          "kind": "button",
+          "x": 20,
+          "y": 116,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://www.anthropic.com 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://www.anthropic.com\")",
+          "text": "Anthropic 홈페이지",
+          "color": "#ffbe6f",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_3",
+          "kind": "button",
+          "x": 20,
+          "y": 152,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://docs.anthropic.com 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://docs.anthropic.com\")",
+          "text": "Claude 공식 문서",
+          "color": "#ffbe6f",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
         },
         {
           "id": "button_4",
           "kind": "button",
-          "x": 307,
-          "y": 105,
-          "width": 187,
-          "height": 24,
-          "instruction": "https://comic.naver.com/webtoon/list?titleId=849676&page=2&sort=DESC 에 접속",
-          "code": "def on_event(self):\n    open_url(\"https://comic.naver.com/webtoon/list?titleId=849676&page=2&sort=DESC\")",
-          "text": "네이버 웹툰 - 생활의 참견 2",
-          "color": "#cdab8f",
+          "x": 20,
+          "y": 188,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://github.com/anthropics/claude-code 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://github.com/anthropics/claude-code\")",
+          "text": "Claude Code GitHub",
+          "color": "#ffbe6f",
           "font_family": null,
           "font_size": null,
           "group": null,
-          "no_border": false
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_5",
+          "kind": "button",
+          "x": 280,
+          "y": 80,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://opencode.ai 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://opencode.ai\")",
+          "text": "opencode 홈페이지",
+          "color": "#8ff0a4",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_6",
+          "kind": "button",
+          "x": 280,
+          "y": 116,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://github.com/sst/opencode 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://github.com/sst/opencode\")",
+          "text": "opencode GitHub",
+          "color": "#8ff0a4",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_7",
+          "kind": "button",
+          "x": 540,
+          "y": 80,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://www.learncpp.com 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://www.learncpp.com\")",
+          "text": "learncpp.com",
+          "color": "#99c1f1",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_8",
+          "kind": "button",
+          "x": 540,
+          "y": 116,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://en.cppreference.com/w/cpp 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://en.cppreference.com/w/cpp\")",
+          "text": "cppreference.com",
+          "color": "#99c1f1",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_9",
+          "kind": "button",
+          "x": 540,
+          "y": 152,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://godbolt.org 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://godbolt.org\")",
+          "text": "Compiler Explorer",
+          "color": "#99c1f1",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_10",
+          "kind": "button",
+          "x": 540,
+          "y": 188,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://cppinsights.io/ 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://cppinsights.io/\")",
+          "text": "cppinsights.io",
+          "color": "#99c1f1",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_11",
+          "kind": "button",
+          "x": 540,
+          "y": 224,
+          "width": 220,
+          "height": 28,
+          "instruction": "https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines 에 접속",
+          "code": "def on_event(self):\n    open_url(\"https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines\")",
+          "text": "C++ core guideline",
+          "color": "#99c1f1",
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        }
+      ]
+    },
+    {
+      "title": "설명",
+      "color": null,
+      "widgets": [
+        {
+          "id": "button_1",
+          "kind": "button",
+          "x": 30,
+          "y": 30,
+          "width": 220,
+          "height": 32,
+          "instruction": "이 앱 전체에 대한 설명을 보여주는 창을 띄운다. 탭이 추가되거나 삭제되어도 항상 지금 있는 탭 구성을 기준으로 알아서 다시 만들어져야 한다.",
+          "code": "def on_event(self):\n    show_text_dialog(self, \"전체 앱 설명\", app_overview_text(self))",
+          "text": "전체 앱 설명",
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_2",
+          "kind": "button",
+          "x": 30,
+          "y": 80,
+          "width": 220,
+          "height": 32,
+          "instruction": "각 탭을 어떻게 사용하는지 탭별로 설명하는 창을 띄운다. 탭이 추가되거나 삭제되어도 항상 지금 있는 탭 구성을 기준으로 알아서 다시 만들어져야 한다.",
+          "code": "def on_event(self):\n    show_text_dialog(self, \"각 탭 사용법\", tab_usage_text(self))",
+          "text": "각 탭에 대한 설명",
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_3",
+          "kind": "button",
+          "x": 30,
+          "y": 150,
+          "width": 220,
+          "height": 32,
+          "instruction": "standalone 디렉토리에서 등록할 파일을 선택하게 한 다음, 이 앱의 standalone 파일을 윈도우 시작 프로그램에 등록한다.",
+          "code": "def on_event(self):\n    path = pick_startup_file(self)\n    if not path:\n        return\n    add_to_startup(path)\n    QMessageBox.information(self, \"등록 완료\", f\"다음 파일을 시작 프로그램에 등록했습니다:\\n{path}\")",
+          "text": "시작 프로그램 등록",
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "button_4",
+          "kind": "button",
+          "x": 30,
+          "y": 200,
+          "width": 220,
+          "height": 32,
+          "instruction": "standalone 디렉토리에서 파일을 선택하게 한 다음, 이 앱의 standalone 파일을 윈도우 시작 프로그램에서 삭제한다.",
+          "code": "def on_event(self):\n    path = pick_startup_file(self)\n    if not path:\n        return\n    removed = remove_from_startup(path)\n    if removed:\n        QMessageBox.information(self, \"삭제 완료\", f\"다음 파일을 시작 프로그램에서 삭제했습니다:\\n{path}\")\n    else:\n        QMessageBox.information(self, \"안내\", \"시작 프로그램에 등록되어 있지 않습니다.\")",
+          "text": "시작 프로그램 삭제",
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
         }
       ]
     }

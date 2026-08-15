@@ -5,8 +5,14 @@ exporter embeds this file's source verbatim.
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QStyle, QStyleOptionTab, QStylePainter, QTabBar
+
+# Matches theme.py's `QTabBar::tab:selected { border-bottom: 2px solid #5b72e0; }`
+# so a colored tab's custom-painted selection underline looks identical to an
+# uncolored tab's native one instead of only showing up on uncolored tabs.
+_SELECTED_UNDERLINE_COLOR = QColor("#5b72e0")
+_SELECTED_UNDERLINE_WIDTH = 2
 
 
 class ColorTabBar(QTabBar):
@@ -91,6 +97,12 @@ class ColorTabBar(QTabBar):
                 path.lineTo(rect.right(), rect.bottom())
                 path.closeSubpath()
                 painter.fillPath(path, color)
+                if index == current:
+                    pen = QPen(_SELECTED_UNDERLINE_COLOR, _SELECTED_UNDERLINE_WIDTH)
+                    pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+                    painter.setPen(pen)
+                    y = rect.bottom() - _SELECTED_UNDERLINE_WIDTH // 2
+                    painter.drawLine(rect.left(), y, rect.right(), y)
                 painter.setPen(self.palette().windowText().color())
                 painter.drawText(rect, Qt.AlignCenter, self.tabText(index))
                 painter.restore()

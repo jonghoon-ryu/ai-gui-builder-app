@@ -138,26 +138,35 @@ venv\Scripts\pythonw.exe main.py
   알람으로 자동 등록함. 응답을 기다리는 동안에도 창이 멈추지 않으며, 해석에 실패하면 오류 팝업이 뜸.
   **claude CLI 자체가 없으면** "Claude Code 필요"라는 제목의 팝업으로 설치(`npm install -g
   @anthropic-ai/claude-code`)·로그인(`claude login`) 안내가 뜬다
-- **알람 목록** 제목 아래 목록에 등록된 알람이 날짜/시간 정보 + **알람 메시지**(따옴표로 표시) +
-  "다음 알람까지 남은 시간"과 함께 실시간(1초마다)으로 갱신되어 표시됨
-  (예: `일회성: 2026-08-13 09:00 — "회의 알람"    남은 시간: 17시간 7분`). 각 알람 줄 오른쪽에
-  **"끄기"/"켜기" 버튼**과 둥근 **× 버튼**이 있음
+- **알람 목록 (YYYY-MM-DD)** 제목 아래 목록에는 **달력에서 선택한 날짜에 해당하는 알람만** 표시됨
+  — 일회성 알람은 그 날짜와 정확히 일치할 때만, 주기적 알람은 선택한 날짜가 시작~끝 날짜 범위 안이고
+  그 요일이 반복 요일에 포함될 때만 보인다. 달력에서 다른 날짜를 클릭하면 목록과 제목의 날짜가 즉시
+  바뀐다 (기본값은 오늘 날짜). 시간 계산·알람 발동 자체는 화면에 보이는 날짜와 무관하게 항상 백그라운드로
+  계속 진행된다 — 선택한 날짜를 바꿔도 다른 날짜의 알람이 사라지는 게 아니라 목록에서만 잠시 안 보일 뿐이다.
+  표시되는 각 줄은 날짜/시간 정보 + **알람 메시지**(따옴표로 표시) + "다음 알람까지 남은 시간"과 함께
+  실시간(1초마다)으로 갱신됨 (예: `일회성: 2026-08-13 09:00 — "회의 알람"    남은 시간: 17시간 7분`).
+  각 알람 줄 오른쪽에 **"끄기"/"켜기" 버튼**과 둥근 **× 버튼**이 있음
   - "끄기"를 누르면 그 알람은 목록에 계속 보이되(글자가 회색으로 흐려지고 "꺼짐"으로 표시) 시간이
     되어도 울리지 않는다. "켜기"를 다시 누르면 정상적으로 복귀 (밀린 시간이 이미 지났다면 다음
     새로고침에 바로 울림)
   - × 버튼을 누르면 그 알람만 목록에서 완전히 삭제됨
+  - 제목 오른쪽의 **"알람 모두 삭제"** 버튼을 누르면 확인 팝업("등록된 알람 N개를 모두
+    삭제하시겠습니까?") 후에만 등록된 알람을 전부 삭제함 (날짜 필터와 무관하게 전체 삭제, 알람이
+    하나도 없으면 버튼을 눌러도 아무 일도 안 일어남)
 - 알람 시간이 되면 **가로 20cm × 세로 20cm 정사각형 팝업 창**이 뜨고, 창 제목과 본문 모두에 알람
   등록 시 입력한(또는 자연어에서 자동으로 만들어진) 메시지가 표시됨. 일회성 알람은 울린 뒤 목록에서
   사라지고, 주기적 알람은 다음 반복 요일로 자동으로 넘어감 (끝 날짜가 지나면 더 이상 표시 안 됨)
 - 패널 기본 크기 1000×640
 
 **알람 저장**: 아직 울리지 않은(미래의) 알람은 알람을 추가/삭제/켜기·끄기/발동할 때마다 자동으로
-`alarm_state.json`(빌더 폴더 기준)에 저장되고, 앱을 껐다 다시 켜면 그대로 복원된다. 이미 울린
-일회성 알람이나 끝 날짜가 지난 주기적 알람은 저장 대상에서 자동으로 제외된다(다시 켜도 어차피 안
-울릴 항목이라 남겨둘 필요가 없음). standalone으로 내보내도 동일하게 동작하며(내보낸 앱에도
-`alarm_widget.py` 소스가 그대로 포함됨, 자연어 알람 설정 기능도 포함되어 실행 PC에 `claude` CLI가
-있으면 그대로 동작함), 내보낸 앱은 자기 위치 기준의 별도 `alarm_state.json`을 갖는다(빌더와 공유
-안 함).
+`appData/alarm_state.json`(빌더 폴더 기준 `appData/` 하위)에 저장되고, 앱을 껐다 다시 켜면 그대로
+복원된다. 이미 울린 일회성 알람이나 끝 날짜가 지난 주기적 알람은 저장 대상에서 자동으로 제외된다
+(다시 켜도 어차피 안 울릴 항목이라 남겨둘 필요가 없음). standalone으로 내보내도 동일하게 동작하며
+(내보낸 앱에도 `alarm_widget.py` 소스가 그대로 포함됨, 자연어 알람 설정 기능도 포함되어 실행 PC에
+`claude` CLI가 있으면 그대로 동작함), 내보낸 앱은 자기 위치 기준의 별도 `appData/alarm_state.json`을
+갖는다(빌더와 공유 안 함). `appData/` 폴더 없이 바로 밑에 `alarm_state.json`이 있던 예전 방식으로
+저장된 파일이 있으면 다음 실행 시 자동으로 `appData/` 안으로 옮겨진다(2026-08-15 이전 버전과의
+호환용, 데이터 유실 없음).
 
 ## 4. 윈도우 현황 위젯
 
@@ -215,7 +224,8 @@ venv\Scripts\pythonw.exe main.py
 - **remote/local 비교 상자 6쌍** — 각각 사각 테두리로 감싸진 독립적인 상자이며, 서로 다른 저장소를
   최대 6개까지 등록해둘 수 있다 (2열 × 3행). wiki 탭의 URL/디렉토리 입력창과 같은 방식으로, remote
   칸의 아이콘을 누르면 URL을 입력하는 작은 팝업이, local 칸의 아이콘을 누르면 Windows 폴더 선택
-  창이 뜬다. 입력한 값은 `git_panel_state.json`에 자동 저장되어 앱을 껐다 켜도 유지된다
+  창이 뜬다. 입력한 값은 `appData/git_panel_state.json`에 자동 저장되어 앱을 껐다 켜도 유지된다
+  (알람과 마찬가지로, `appData/` 없이 저장된 예전 파일이 있으면 다음 실행 시 자동으로 옮겨짐)
   - **비교** 버튼 — local 저장소의 HEAD 커밋과 remote 저장소의 HEAD 커밋을 비교해서, 같으면 "동일함",
     다르면 두 커밋 ID를 각각 보여줌 (remote는 실제로 클론/fetch하지 않고 `git ls-remote`로만 조회하므로
     로컬 저장소 상태를 건드리지 않음)
@@ -230,15 +240,39 @@ venv\Scripts\pythonw.exe main.py
     않고, 두 버전을 안전하게 복사해두는 방식). 추적되지 않는(untracked) 새 파일은 비교할 원본이 없어서
     대상에서 제외됨
 
-## 6. standalone(독립 실행) 앱 만들고 실행시키는 방법
+## 6. 설명 탭 (앱/탭 사용법 안내 + 시작 프로그램 등록·삭제)
 
-### 6-1. 빌더에서 내보내기
+**"설명"** 탭에 버튼 4개가 놓여있다. 다른 전용 위젯(알람/윈도우 현황/git)과 달리 이 버튼들은
+팔레트의 평범한 "누름 버튼"에 "동작 설정"으로 코드를 붙인 것이라, 원한다면 지우거나 다른 탭으로
+옮겨도 된다.
+
+- **전체 앱 설명** 버튼 — 지금 이 앱에 탭이 몇 개 있고 각 탭에 위젯이 몇 개씩 있는지 요약해서
+  보여주는 창을 띄운다.
+- **각 탭에 대한 설명** 버튼 — 탭별로 그 탭에 있는 위젯 목록(버튼 라벨, 입력창 등)을 자세히
+  나열해서 보여주는 창을 띄운다.
+  - 두 버튼 모두 **클릭하는 시점에 실제 탭 구성을 직접 읽어서** 내용을 새로 만든다 — 미리 써둔
+    고정 텍스트가 아니라서, 탭을 추가/삭제하거나 위젯을 바꿔도 다시 손볼 필요 없이 항상 최신
+    상태가 그대로 반영된다.
+- **시작 프로그램 등록** 버튼 — `standalone/` 디렉토리를 기본 위치로 하는 파일 선택 창이 뜨고, 고른
+  파일(보통 이 앱을 내보낸 `.exe`)을 Windows 로그인 시 자동 실행되도록 현재 사용자의 레지스트리
+  Run 키(`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`)에 등록한다. 등록 이름은 파일 이름에서
+  확장자를 뺀 값이라, 같은 파일을 다시 등록하면 새로 추가되지 않고 기존 항목이 갱신된다.
+- **시작 프로그램 삭제** 버튼 — 마찬가지로 `standalone/`에서 파일을 고르면, "시작 프로그램 등록"이
+  만들었을 법한 그 이름의 레지스트리 항목을 제거한다. 등록되어 있지 않으면 안내 팝업만 뜬다.
+
+이 네 버튼이 쓰는 `show_text_dialog`/`app_overview_text`/`tab_usage_text`/`pick_startup_file`/
+`add_to_startup`/`remove_from_startup`은 8번 "생성 코드가 쓸 수 있는 함수" 목록에도 포함된
+화이트리스트 함수이며, standalone으로 내보낸 앱에도 동일하게 포함되어 그대로 동작한다.
+
+## 7. standalone(독립 실행) 앱 만들고 실행시키는 방법
+
+### 7-1. 빌더에서 내보내기
 
 두 가지 방식이 있다.
 
 **"실행 py 저장"** 버튼 (예전 "standalone 저장") — 저장 창이 기본으로 `executable_py/` 디렉토리에서
 열리며, 원하면 다른 위치로 바꿔서 저장해도 된다 → 폴더 선택 + 파일명 입력(`.py`) → 저장. 나온 `.py`
-파일은 PySide6(+markdownify/beautifulsoup4)가 설치된 파이썬으로 실행해야 한다 (아래 6-2 참고).
+파일은 PySide6(+markdownify/beautifulsoup4)가 설치된 파이썬으로 실행해야 한다 (아래 7-2 참고).
 탭 여러 개로 만든 내용, 각 위젯의 텍스트/색깔/크기/폰트/동작이 전부 그대로 내보내진다. 탭바 모양도
 빌더와 완전히 동일하다 — 탭 위쪽 모서리가 둥글고, 색깔을 지정한 탭은 그 색으로 칠해지며, 선택된
 탭의 제목만 볼드로 표시된다 (`tab_bar.py`의 `ColorTabBar`를 그대로 내보내서 씀). 앱 전체 테마
@@ -254,15 +288,16 @@ venv\Scripts\pythonw.exe main.py
 
 두 방식 모두, 내보내는 시점에 "git" 탭의 6쌍 remote/local 값과 "alarm" 탭의 (아직 울리지 않은) 알람
 목록이 빌더에 있는 그대로 내보낸 앱에도 미리 채워진다. 내보낸 앱을 실행한 뒤 그 안에서 새로 채우거나
-바꾼 값은 `.py` 방식이면 그 스크립트 파일과 같은 폴더의 `git_panel_state.json`/`alarm_state.json`에,
-`.exe` 방식이면 그 실행 파일과 같은 폴더에 각각 저장되어 다음 실행 때도 유지된다.
+바꾼 값은 `.py` 방식이면 그 스크립트 파일과 같은 폴더의 `appData/git_panel_state.json`/
+`appData/alarm_state.json`에, `.exe` 방식이면 그 실행 파일과 같은 폴더의 `appData/`에 각각 저장되어
+다음 실행 때도 유지된다.
 
 **"실행 py 저장"**으로 내보낼 때는 `executable_py/` 디렉토리 밑에 날짜(+번호)별 하위 폴더를 만들어
 저장하는 것이 이 프로젝트의 정리 방식이다 (예: `executable_py/2026_08_09_#2/app.py`). 프로젝트 루트가
 지저분해지지 않도록 새로 내보낼 때도 이 규칙을 따른다 (`.exe`는 용량이 커서 이 규칙과 무관하게
 git에 커밋하지 않는다).
 
-### 6-2. 내보낸 앱 실행시키는 방법
+### 7-2. 내보낸 앱 실행시키는 방법
 
 **이 프로젝트의 venv를 그대로 쓰는 경우** (같은 컴퓨터에서 바로 실행할 때 가장 간단):
 
@@ -281,14 +316,14 @@ py -m venv venv
 
 내보낸 `.py` 파일은 빌더나 `claude` CLI 없이 PySide6만 있으면 실행된다.
 
-## 7. 위젯 간 참조
+## 8. 위젯 간 참조
 
 생성된 코드에서 `self.<위젯id>` 형태로 캔버스의 다른 위젯을 참조/조작할 수 있다
 (예: `self.textbox_1.text()`, `self.combobox_1.currentText()`, `self.radiobutton_1.isChecked()`).
 id는 `종류_번호` 형식으로 자동 부여되며(`button_1`, `lineedit_1`, `combobox_1`, `radiobutton_1`, ...)
 위젯에 마우스를 올리면 툴팁으로 확인 가능.
 
-## 8. 생성 코드가 쓸 수 있는 함수 (안전을 위한 화이트리스트)
+## 9. 생성 코드가 쓸 수 있는 함수 (안전을 위한 화이트리스트)
 
 LLM이 생성한 코드는 클릭 한 번에 확인 없이 바로 실행되기 때문에, 임의의 파이썬을 다 허용하지 않고
 아래로 제한한다:
@@ -310,17 +345,28 @@ LLM이 생성한 코드는 클릭 한 번에 확인 없이 바로 실행되기 �
 - `classify_image_with_claude(path)` — 로컬 이미지 파일을 `claude` CLI에게 보여주고 폴더명으로 쓸 수
   있는 영문 소문자 카테고리 단어를 받아옴 (CLI 없음/타임아웃/실패 시 "기타" 반환). 이미지 개수만큼
   순차 호출되므로 느릴 수 있음
+- `show_text_dialog(self, "제목", text)` — 긴 텍스트를 스크롤 가능한 읽기 전용 창으로 보여줌
+  (`QMessageBox`보다 긴 설명문에 적합)
+- `app_overview_text(self)` / `tab_usage_text(self)` — 호출 시점의 실제 탭 구성을 읽어서 각각
+  "탭 개수 요약" / "탭별 위젯 목록" 텍스트를 만들어 반환 (6번 "설명 탭" 참고). 항상 최신 상태를
+  반영하므로 탭이 추가/삭제돼도 다시 만들 필요 없음
+- `pick_startup_file(self)` — `standalone/` 디렉토리를 기본 위치로 하는 파일 선택 창을 띄우고 고른
+  경로를 반환 (취소 시 `None`)
+- `add_to_startup(path)` / `remove_from_startup(path)` — `path`를 현재 사용자의 레지스트리 Run 키에
+  등록/제거 (파일 이름에서 확장자를 뺀 값을 등록 이름으로 사용)
 - 그 외 `import`, os/subprocess 접근, 임의 네트워크 요청은 금지
 
 내보낸 독립 실행 `.py` 파일에도 동일한 함수들(`open_url`/`read_file`/`write_file`/`delete_file`/
 `list_dir`/`make_dir`/`move_file`/`fetch_url`/`html_to_markdown`/`extract_images`/`download_file`/
-`classify_image_with_claude`)이 모듈 함수로 그대로 포함되어, 빌더 없이도 그대로 동작한다. 단
+`classify_image_with_claude`/`show_text_dialog`/`app_overview_text`/`tab_usage_text`/
+`pick_startup_file`/`add_to_startup`/`remove_from_startup`)이 모듈 함수로 그대로 포함되어, 빌더 없이도
+그대로 동작한다. 단
 `html_to_markdown`/`extract_images`가 `markdownify`/`beautifulsoup4` 패키지를 쓰기 때문에, 내보낸
 앱을 돌리는 쪽 venv에도 `pip install -r requirements.txt`(PySide6 + markdownify + beautifulsoup4)가
 되어 있어야 한다. `classify_image_with_claude`를 쓰는 동작을 내보낸 앱에서 실행하려면 그 컴퓨터에도
 `claude` CLI가 설치·로그인되어 있어야 한다.
 
-## 9. 파일 구성
+## 10. 파일 구성
 
 | 파일 | 역할 |
 |---|---|
@@ -329,7 +375,7 @@ LLM이 생성한 코드는 클릭 한 번에 확인 없이 바로 실행되기 �
 | `canvas_window.py` | 캔버스 창. 탭 관리, 드롭 처리, 위젯 이동/크기조절/선택/복사·붙여넣기, 위젯·탭 우클릭 메뉴, 상태 저장/복원, 내보내기 다이얼로그 |
 | `behavior_dialog.py` | "동작 설정" 다이얼로그. 자연어 입력 + 코드 미리보기 + 생성(백그라운드 스레드)/저장 |
 | `ai_client.py` | `claude` CLI를 서브프로세스로 호출해 `def on_event(self): ...` 코드 생성. 시스템 프롬프트로 허용 함수/제약 명시 |
-| `code_binder.py` | 생성 코드를 제한된 네임스페이스에서 `exec`, 위젯 시그널에 바인딩. `open_url`/`read_file`/`write_file`/`delete_file` 정의 |
+| `code_binder.py` | 생성 코드를 제한된 네임스페이스에서 `exec`, 위젯 시그널에 바인딩. `open_url`/`read_file`/`write_file`/`delete_file`/`show_text_dialog`/`app_overview_text`/`tab_usage_text`/`pick_startup_file`/`add_to_startup`/`remove_from_startup` 등 화이트리스트 함수 정의 |
 | `exporter.py` | 캔버스 상태(여러 탭 포함)를 독립 실행 가능한 `.py` 소스로 직렬화 (`generate_source`/`export_to_file`), PyInstaller로 단일 `.exe` 빌드 (`build_exe`) |
 | `alarm_widget.py` | "알람 시계" 위젯 구현 (`AlarmClockPanel`, `AnalogClock`, 날짜/시간 선택 다이얼로그들, 자연어 알람 등록) |
 | `window_status_widget.py` | "윈도우 현황" 위젯 구현 (`WindowStatusPanel`). Windows 버전/CPU/메모리/디스크/휴지통을 `ctypes`(+`winreg`/`subprocess`)로 조회, 추가 pip 패키지 불필요 |
@@ -337,14 +383,14 @@ LLM이 생성한 코드는 클릭 한 번에 확인 없이 바로 실행되기 �
 | `theme.py` | 빌더 창(캔버스/팔레트)에 적용하는 앱 전역 QSS. standalone 내보내기에도 항상 함께 포함됨 |
 | `tab_bar.py` | 탭바 구현 (`ColorTabBar`: 둥근 모서리, 탭별 색깔, 선택된 탭 볼드). 빌더/standalone 양쪽에서 같은 소스 파일 그대로 사용 |
 | `builder_state.json` | 빌더 자체 상태(탭/위젯 구성) 저장 파일. 실행 시 자동 로드 |
-| `alarm_state.json` | 아직 울리지 않은 알람 목록 저장 파일 (빌더/내보낸 앱 각각 자기 폴더 기준으로 별도 보관) |
-| `git_panel_state.json` | git 위젯의 local/remote 6쌍 값 저장 파일 (빌더/내보낸 앱 각각 자기 폴더 기준으로 별도 보관) |
+| `appData/alarm_state.json` | 아직 울리지 않은 알람 목록 저장 파일 (빌더/내보낸 앱 각각 자기 폴더의 `appData/` 기준으로 별도 보관) |
+| `appData/git_panel_state.json` | git 위젯의 local/remote 6쌍 값 저장 파일 (빌더/내보낸 앱 각각 자기 폴더의 `appData/` 기준으로 별도 보관) |
 | `md_files/` | 문서 모음 (`how_to_use.md`, `tool_requirement.md`) |
 | `executable_py/` | "실행 py 저장" 버튼을 누르면 저장 다이얼로그가 기본으로 여기서 시작한다. 내보낸 `.py` 결과물을 날짜별 하위 폴더(`2026_08_09_#2` 등)로 정리해 모아두는 곳 |
 | `standalone/` | "standalone 실행 파일 저장"(.exe) 버튼을 누르면 저장 다이얼로그가 기본으로 여기서 시작한다 |
 | `venv/` | PySide6가 설치된 가상환경 (`venv\Scripts\python.exe`로 실행) |
 
-## 10. 알아두면 좋은 것들
+## 11. 알아두면 좋은 것들
 
 - **venv**: 이 프로젝트 전용 파이썬 패키지 설치 공간. 시스템 파이썬에는 PySide6가 없으므로 반드시
   `venv\Scripts\pythonw.exe`로 실행해야 한다 (`python.exe`로 실행하면 "python.exe"라는 제목의

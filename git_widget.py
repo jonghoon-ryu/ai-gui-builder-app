@@ -9,6 +9,7 @@ app's user still needs `git` itself installed and on PATH, same as the
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -43,7 +44,26 @@ _STATE_DIR = (
     if getattr(sys, "frozen", False)
     else os.path.dirname(os.path.abspath(__file__))
 )
-GIT_PANEL_STATE_FILE = os.path.join(_STATE_DIR, "git_panel_state.json")
+# Saved data lives under an `appData/` subdirectory instead of directly next
+# to the app, so a real install's own files don't get mixed in with its data.
+_APP_DATA_DIR = os.path.join(_STATE_DIR, "appData")
+GIT_PANEL_STATE_FILE = os.path.join(_APP_DATA_DIR, "git_panel_state.json")
+_LEGACY_GIT_PANEL_STATE_FILE = os.path.join(_STATE_DIR, "git_panel_state.json")
+
+
+def _migrate_legacy_git_panel_state():
+    """One-time move of a pre-appData/ git_panel_state.json into appData/, so
+    upgrading to this layout doesn't silently lose already-saved pairs."""
+    if os.path.exists(GIT_PANEL_STATE_FILE) or not os.path.exists(_LEGACY_GIT_PANEL_STATE_FILE):
+        return
+    try:
+        os.makedirs(_APP_DATA_DIR, exist_ok=True)
+        shutil.move(_LEGACY_GIT_PANEL_STATE_FILE, GIT_PANEL_STATE_FILE)
+    except OSError:
+        pass
+
+
+_migrate_legacy_git_panel_state()
 
 
 def _run_git(args, cwd=None, timeout=_GIT_TIMEOUT_SECONDS):
@@ -51,7 +71,13 @@ def _run_git(args, cwd=None, timeout=_GIT_TIMEOUT_SECONDS):
     only for git itself being unavailable or timing out."""
     try:
         result = subprocess.run(
-            [GIT_BIN, *args], cwd=cwd, capture_output=True, text=True, timeout=timeout
+            [GIT_BIN, *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
         )
     except FileNotFoundError:
         return False, "", "git 명령을 찾을 수 없습니다. git이 설치되어 있고 PATH에 등록되어 있어야 합니다."
@@ -187,6 +213,7 @@ def _load_git_panel_state():
 
 def _save_git_panel_state(pairs):
     try:
+        os.makedirs(_APP_DATA_DIR, exist_ok=True)
         with open(GIT_PANEL_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(pairs, f, ensure_ascii=False, indent=2)
     except OSError:

@@ -55,6 +55,15 @@ def on_event(self):
         category = classify_image_with_claude(temp_path)
         make_dir(save_dir + "/" + category)
         move_file(temp_path, save_dir + "/" + category + "/" + filename)
+- 앱/탭 사용법을 설명하는 창을 띄워야 하면 아래 함수를 사용하세요:
+  - show_text_dialog(self, "제목", text) -> 긴 텍스트를 스크롤 가능한 읽기 전용 창으로 보여줌 (QMessageBox보다 긴 설명문에 적합)
+  - app_overview_text(self) -> 호출 시점의 실제 탭 구성을 읽어서 "탭 개수/구성 요약" 텍스트를 만들어 반환 (탭이 추가/삭제돼도 항상 최신 상태 반영)
+  - tab_usage_text(self) -> 호출 시점의 실제 탭 구성을 읽어서 "탭별 위젯 목록" 텍스트를 만들어 반환
+  - 예: show_text_dialog(self, "전체 앱 설명", app_overview_text(self))
+- 이 앱의 standalone 실행 파일을 Windows 시작 프로그램에 등록/삭제해야 하면 아래 함수를 사용하세요:
+  - pick_startup_file(self) -> standalone/ 디렉토리를 기본 위치로 하는 파일 선택 창을 띄우고 고른 경로를 반환 (취소 시 None)
+  - add_to_startup(path) -> path를 현재 사용자의 레지스트리 Run 키에 등록 (파일 이름에서 확장자를 뺀 값이 등록 이름)
+  - remove_from_startup(path) -> add_to_startup이 만들었을 법한 등록을 제거, 없으면 False 반환
 - 그 외의 임의 네트워크 요청, os/subprocess 접근, import 문은 사용하지 마세요. 위에 나열된 함수들을 제외하면 PySide6 위젯 조작과 순수 파이썬 로직만 사용하세요.
 - 존재하지 않는 위젯 id를 참조하지 마세요.
 """
@@ -103,6 +112,8 @@ def generate_handler_code(target_id, target_type, all_widgets, instruction):
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=TIMEOUT_SECONDS,
         )
     except FileNotFoundError as exc:

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import uuid
@@ -44,7 +45,26 @@ _STATE_DIR = (
     if getattr(sys, "frozen", False)
     else os.path.dirname(os.path.abspath(__file__))
 )
-ALARM_STATE_FILE = os.path.join(_STATE_DIR, "alarm_state.json")
+# Saved data lives under an `appData/` subdirectory instead of directly next
+# to the app, so a real install's own files don't get mixed in with its data.
+_APP_DATA_DIR = os.path.join(_STATE_DIR, "appData")
+ALARM_STATE_FILE = os.path.join(_APP_DATA_DIR, "alarm_state.json")
+_LEGACY_ALARM_STATE_FILE = os.path.join(_STATE_DIR, "alarm_state.json")
+
+
+def _migrate_legacy_alarm_state():
+    """One-time move of a pre-appData/ alarm_state.json into appData/, so
+    upgrading to this layout doesn't silently lose already-saved alarms."""
+    if os.path.exists(ALARM_STATE_FILE) or not os.path.exists(_LEGACY_ALARM_STATE_FILE):
+        return
+    try:
+        os.makedirs(_APP_DATA_DIR, exist_ok=True)
+        shutil.move(_LEGACY_ALARM_STATE_FILE, ALARM_STATE_FILE)
+    except OSError:
+        pass
+
+
+_migrate_legacy_alarm_state()
 
 
 def _serialize_alarms(alarms):
@@ -145,6 +165,7 @@ def _load_alarm_state():
 
 def _save_alarm_state(alarms):
     try:
+        os.makedirs(_APP_DATA_DIR, exist_ok=True)
         with open(ALARM_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(_serialize_alarms(alarms), f, ensure_ascii=False, indent=2)
     except OSError:
@@ -207,6 +228,8 @@ def _parse_alarm_with_claude(text, now):
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_ALARM_PARSE_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as exc:
@@ -525,6 +548,7 @@ class AlarmClockPanel(QWidget):
         self.calendar.setMaximumWidth(300)
         self.calendar.setMaximumHeight(190)
         self.calendar.setSelectedDate(QDate.currentDate())
+        self.calendar.selectionChanged.connect(self._refresh_list)
         top_row.addWidget(self.calendar, 0, Qt.AlignTop)
         top_row.addStretch(1)
         self.clock = AnalogClock()
@@ -532,11 +556,17 @@ class AlarmClockPanel(QWidget):
         top_row.addSpacing(_cm_to_px(0.5))
         outer.addLayout(top_row)
 
-        list_title = QLabel("알람 목록")
-        title_font = list_title.font()
+        list_title_row = QHBoxLayout()
+        self.list_title = QLabel("알람 목록")
+        title_font = self.list_title.font()
         title_font.setBold(True)
-        list_title.setFont(title_font)
-        outer.addWidget(list_title)
+        self.list_title.setFont(title_font)
+        list_title_row.addWidget(self.list_title)
+        list_title_row.addStretch(1)
+        self.delete_all_button = QPushButton("알람 모두 삭제")
+        self.delete_all_button.clicked.connect(self._delete_all_alarms)
+        list_title_row.addWidget(self.delete_all_button)
+        outer.addLayout(list_title_row)
 
         self.list_widget = QListWidget()
         outer.addWidget(self.list_widget)
@@ -682,6 +712,22 @@ class AlarmClockPanel(QWidget):
         _save_alarm_state(self._alarms)
         self._refresh_list()
 
+    def _delete_all_alarms(self):
+        if not self._alarms:
+            return
+        reply = QMessageBox.question(
+            self,
+            "모두 삭제 확인",
+            f"등록된 알람 {len(self._alarms)}개를 모두 삭제하시겠습니까?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._alarms = []
+        _save_alarm_state(self._alarms)
+        self._refresh_list()
+
     def _toggle_alarm(self, alarm_id):
         for alarm in self._alarms:
             if alarm["id"] == alarm_id:
@@ -707,6 +753,14 @@ class AlarmClockPanel(QWidget):
                     return candidate_dt
             candidate_date = candidate_date.addDays(1)
         return None
+
+    def _occurs_on_date(self, alarm, date):
+        if alarm["type"] == "once":
+            return alarm["datetime"].date() == date
+        return (
+            alarm["start_date"] <= date <= alarm["end_date"]
+            and (date.dayOfWeek() - 1) in alarm["weekdays"]
+        )
 
     def _format_alarm_label(self, alarm):
         message = alarm.get("message") or DEFAULT_ALARM_MESSAGE
@@ -741,6 +795,8 @@ class AlarmClockPanel(QWidget):
 
     def _refresh_list(self):
         now = QDateTime.currentDateTime()
+        selected_date = self.calendar.selectedDate()
+        self.list_title.setText(f"알람 목록 ({selected_date.toString('yyyy-MM-dd')})")
         self.list_widget.clear()
 
         for alarm in self._alarms:
@@ -758,6 +814,11 @@ class AlarmClockPanel(QWidget):
                 status_text = f"남은 시간: {self._format_remaining(now.secsTo(occurrence))}"
             else:
                 status_text = "꺼짐"
+
+            # Firing above must run regardless of the calendar's selected
+            # date - only whether a row gets drawn depends on it.
+            if not self._occurs_on_date(alarm, selected_date):
+                continue
 
             label_text = self._format_alarm_label(alarm)
 

@@ -118,7 +118,34 @@ status check" 두 개의 독립된 버튼으로 정리됨).
   버튼으로 자동/claude 분류 선택) + 라디오 버튼 2개
 - **윈도우 현황** — 윈도우 현황 위젯 1개 (Windows 버전/CPU/메모리/디스크/휴지통)
 - **alarm** — 알람 시계 위젯 1개
-- **쉬었다 합시다** — 노래 링크 버튼 3개(유튜브 열기) + 구분선
+- **설명** — 버튼 4개: "전체 앱 설명"/"각 탭에 대한 설명"(둘 다 클릭 시점에 실제 탭 구성을 읽어서
+  내용을 새로 만듦, `how_to_use.md` 6번 참고), "시작 프로그램 등록"/"시작 프로그램 삭제"(standalone
+  파일을 Windows 로그인 시 자동 실행되도록 레지스트리 Run 키에 등록/제거). 2026-08-15 추가,
+  "쉬었다 합시다" 탭을 대체함(노래/웹툰 버튼들은 제거)
+- **link** — 3개 카테고리(claude/opencode/C++)로 나뉜 링크 모음. 각 카테고리는 색 있는 헤더
+  입력창 + 버튼 여러 개(각 버튼이 `open_url`로 해당 사이트를 염), 카테고리 사이는 세로 구분선으로
+  나뉨. C++ 카테고리 5개 링크(learncpp.com/cppreference.com/godbolt.org(Compiler Explorer)/
+  cppinsights.io/isocpp.github.io)는 사용자가 직접 지정, claude(4개)/opencode(2개) 링크는 요청에
+  따라 알아서 고름. 2026-08-15 추가
+
+## 설명 탭 + 관련 화이트리스트 함수 추가 (2026-08-15)
+
+"쉬었다 합시다" 탭을 지우고 "설명" 탭을 새로 만들면서, `code_binder.py`(빌더)와
+`exporter.py`(standalone 내보내기) 양쪽에 화이트리스트 함수 6개를 동일하게 추가했다:
+`show_text_dialog`/`app_overview_text`/`tab_usage_text`/`pick_startup_file`/`add_to_startup`/
+`remove_from_startup` (자세한 시그니처는 `how_to_use.md` 6번/9번 참고, `ai_client.py`의
+시스템 프롬프트에도 반영해서 앞으로 자연어로 동작을 생성할 때도 이 함수들을 쓸 수 있게 함).
+
+- `app_overview_text`/`tab_usage_text`는 **버튼 클릭 시점에** `self.window().tabs`를 직접 읽어서
+  탭 목록/각 탭의 위젯(직접 자식만, 라벨 텍스트 기준)을 그때그때 새로 조립한다 — 미리 캐싱된 텍스트가
+  아니라서 탭을 추가/삭제하거나 위젯을 바꿔도 이 두 버튼을 다시 손볼 필요가 없다.
+- `add_to_startup`/`remove_from_startup`은 `winreg`로 `HKCU\Software\Microsoft\Windows\
+  CurrentVersion\Run`을 직접 조작한다 (등록 이름 = 파일명에서 확장자 제거한 값, 같은 파일 재등록 시
+  덮어씀). `pick_startup_file`은 `standalone/` 디렉토리를 기본 위치로 하는 파일 선택 창.
+- 헤드리스(`QT_QPA_PLATFORM=offscreen`) 스크립트로 다음을 모두 직접 검증함(스크래치 파일, 커밋 안 됨):
+  `code_binder.compile_handler`로 4개 버튼 코드 컴파일, 실제 `builder_state.json` 복원 경로에서
+  4개 핸들러 정상 바인딩, `exporter.generate_source`로 만든 소스가 `ast.parse`/`py_compile` 통과,
+  레지스트리 등록/삭제 왕복(테스트용 이름 사용 후 정리함).
 
 ## 저장/내보내기 완전성 감사 (2026-08-15)
 
@@ -165,6 +192,52 @@ status check" 두 개의 독립된 버튼으로 정리됨).
 빠짐없이 저장한다. 라디오 버튼 선택 상태 미보존은 코드 수정 없이 이번엔 기록만 해둔 상태 — 필요하면
 `entries`에 `checked` 필드를 추가해 `_save_state`/`generate_source`/복원 로직 세 군데를 함께 고치는
 후속 작업으로 진행할 수 있음.
+
+## claude/git 서브프로세스 출력 한글 깨짐 수정 (2026-08-15)
+
+자연어 알람 설정에서 메시지에 "꺄오" 같은 한글을 넣으면 글자가 깨져서 저장되는 버그를 발견해 수정함.
+원인: `subprocess.run(..., text=True)` 호출에서 `encoding`을 지정하지 않으면 파이썬이
+`locale.getpreferredencoding()`(이 머신에서는 `cp949`)로 stdout을 디코드하는데, `claude` CLI는
+UTF-8로 출력하기 때문에 디코딩이 어긋나서 한글이 깨짐(예: "꺄오" → "爰꾩삤"). `encoding="utf-8",
+errors="replace"`를 모든 `subprocess.run(text=True)` 호출에 추가해서 고침 — `alarm_widget.py`
+(`_parse_alarm_with_claude`), `git_widget.py`(`_run_git`), `code_binder.py`/`exporter.py`
+(`classify_image_with_claude`, 양쪽 동일), `ai_client.py`(`generate_handler_code`),
+`exporter.py`의 PyInstaller 빌드 호출(`build_exe`)까지 전부 동일하게 적용함. 수정 전/후 동작을
+UTF-8 문자열을 출력하는 자식 프로세스로 직접 재현해서 검증했고("꺄오" → "爰꾩삤" vs "꺄오" 그대로),
+실제 `claude` CLI로 사용자가 보고한 문장("오늘부터 9월 1일까지 매일 "꺄오"...")을 그대로 호출해
+`message` 필드가 `'꺄오'`로 정확히 나오는 것까지 확인함.
+
+## 알람 목록 날짜 필터 + 모두 삭제 버튼 (2026-08-15)
+
+`alarm_widget.py`의 알람 목록을 달력에서 선택한 날짜에 해당하는 알람만 보이도록 필터링했다
+(`AlarmClockPanel._occurs_on_date`: 일회성은 날짜 정확히 일치, 주기적은 선택 날짜가 시작~끝
+범위 안이면서 요일이 반복 요일에 포함될 때). 달력의 `selectionChanged`를 `_refresh_list`에 연결해
+날짜를 바꾸면 즉시 갱신되고, 목록 제목에 `알람 목록 (YYYY-MM-DD)` 형식으로 현재 필터링 기준
+날짜를 표시한다. **알람 발동/남은시간 계산 로직 자체는 날짜 필터와 무관하게 그대로 전체 알람을
+대상으로 계속 돈다** — 화면에 안 보이는 날짜의 알람도 시간이 되면 정상적으로 울린다. 목록 제목
+오른쪽에 확인 팝업이 있는 "알람 모두 삭제" 버튼도 추가함. 헤드리스 테스트로 오늘/내일 선택 시
+표시되는 알람 개수가 정확히 필터링되는지, 모두 삭제가 확인 후 전체를 지우는지 직접 검증함.
+
+## alarm/git 저장 데이터를 appData/ 하위로 이동 (2026-08-15)
+
+`alarm_widget.py`/`git_widget.py`가 각각 저장하던 `alarm_state.json`/`git_panel_state.json`을
+앱 폴더 바로 밑이 아니라 `appData/alarm_state.json`/`appData/git_panel_state.json`으로 옮겼다
+(빌더든 standalone 내보내기든 자기 위치 기준 `appData/` 하위, 로직은 두 파일 모두 동일하게
+`_STATE_DIR`에 `appData` 하나만 더 붙이는 식). 예전 방식(폴더 바로 밑)으로 이미 저장돼 있던
+파일이 있으면 모듈이 처음 import될 때(앱 시작 시) 자동으로 `appData/` 안으로 옮기는 1회성
+마이그레이션을 넣어서(`_migrate_legacy_alarm_state`/`_migrate_legacy_git_panel_state`) 기존
+데이터가 사라지지 않게 했다. 실제로 이 저장소 루트에 있던 `alarm_state.json`(빈 배열)/
+`git_panel_state.json`(6쌍 값)도 이 작업 중에 `appData/`로 정상 이전됨을 확인함.
+
+## 탭 선택 밑줄 색 불일치 수정 (2026-08-15)
+
+`tab_bar.py`(`ColorTabBar.paintEvent`)에 커스텀 배경색이 없는 탭(예: alarm/설명)은 네이티브 QSS
+렌더링(`theme.py`의 `QTabBar::tab:selected { border-bottom: 2px solid #5b72e0; }`)을 타서 선택 시
+파란 밑줄이 보이는데, 커스텀 색이 있는 탭(git/wiki/윈도우 현황/link)은 완전히 별도의 수동 페인팅
+경로(`painter.fillPath`)를 타면서 이 밑줄을 전혀 그리지 않는 구조적 불일치가 있었다. 색 있는 탭
+쪽 페인팅에도 선택된 탭이면 동일한 색(`#5b72e0`)/두께(2px)로 밑줄을 그리도록 고쳐서 색 유무와
+무관하게 모든 탭이 선택 시 같은 밑줄을 보이게 함. `tab_bar.py`는 빌더/standalone 양쪽에서 같은
+소스 파일을 그대로 쓰므로 한 번의 수정으로 양쪽 다 반영됨.
 
 ## 알려진 미완/보류 항목
 

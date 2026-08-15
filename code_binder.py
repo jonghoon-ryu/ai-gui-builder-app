@@ -4,13 +4,23 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import winreg
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify as _html_to_markdown
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QInputDialog, QMessageBox
+from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QInputDialog,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 def open_url(url):
@@ -129,6 +139,8 @@ def classify_image_with_claude(path):
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=60,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -137,6 +149,205 @@ def classify_image_with_claude(path):
         return "기타"
     word = "".join(ch for ch in result.stdout.strip().split()[0] if ch.isalnum() or ch in "-_")
     return word or "기타"
+
+
+_STARTUP_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+_DESCRIBABLE_KIND_LABELS = {
+    "QPushButton": "버튼",
+    "QLineEdit": "입력창",
+    "QComboBox": "드롭박스",
+    "QRadioButton": "라디오 버튼",
+    "QFrame": "구분선",
+    "AlarmClockPanel": "알람 시계",
+    "WindowStatusPanel": "윈도우 현황판",
+    "GitPanel": "git 비교 패널",
+}
+
+_ENTRY_KIND_LABELS = {
+    "button": "버튼",
+    "lineedit": "입력창",
+    "urlbox": "URL 입력창",
+    "dirbox": "디렉토리 입력창",
+    "combobox": "드롭박스",
+    "radiobutton": "라디오 버튼",
+    "hline": "구분선",
+    "vline": "구분선",
+}
+
+_PANEL_LABELS = {
+    "alarmclock": "알람 시계",
+    "windowstatus": "윈도우 현황판",
+    "gitpanel": "git 비교 패널",
+}
+
+_PANEL_DESCRIPTIONS = {
+    "alarmclock": (
+        "일회성/주기적 알람을 등록하면 설정한 시간에 20cm x 20cm 팝업 창으로 알려줍니다. "
+        "왼쪽 버튼으로 알람을 추가하고, 자연어 입력칸에 문장을 쓰면 claude CLI가 알아서 "
+        "일회성/주기적 알람으로 등록합니다."
+    ),
+    "windowstatus": (
+        "Windows 버전/CPU/메모리/디스크(C·D·E)/휴지통 현황을 보여주고, '상위 프로세스'/'폴더 용량'/"
+        "'시작 프로그램 목록'/'시스템 변수 바로보기' 버튼을 누르면 각각 해당 정보 창이 뜹니다. "
+        "휴지통 '목록' 버튼은 파일 목록을, '휴지통 비우기' 버튼은 확인 후 휴지통을 비웁니다."
+    ),
+    "gitpanel": (
+        "local/remote 저장소를 최대 6쌍 등록해두는 패널입니다. 각 쌍의 '비교' 버튼을 누르면 local과 "
+        "remote의 HEAD 커밋을 비교해 '비교결과' 버튼 색으로 보여주고(초록=동일, 빨강=다름), 'stash' "
+        "버튼을 누르면 커밋 안 된 변경 파일의 원본/현재 버전을 백업합니다. 'local drive 검색' 버튼은 "
+        "C/D/E 드라이브를 훑어 git 저장소를 찾아 local 칸을 채우고, '전체 status check' 버튼은 "
+        "remote/local이 둘 다 채워진 쌍을 한꺼번에 비교합니다."
+    ),
+}
+
+
+def _tab_pages(page):
+    """Walks up from a tab's page widget to the top-level window and reads
+    its live `.tabs` widget - works for both the builder (CanvasWindow) and
+    an exported standalone app (GeneratedApp), since both expose `.tabs`."""
+    top = page.window()
+    tabs_widget = getattr(top, "tabs", None)
+    if tabs_widget is None:
+        return []
+    return [(tabs_widget.tabText(i), tabs_widget.widget(i)) for i in range(tabs_widget.count())]
+
+
+def _describe_page_widgets(page):
+    """Lists this tab's own widgets (direct children only, so a panel like
+    AlarmClockPanel is described as one item rather than its internals).
+    Used when `page` doesn't carry the builder's `entries` metadata (e.g.
+    an exported standalone app), so only the widget kind/label is known -
+    no click-behavior detail, since `instruction` text isn't exported."""
+    items = []
+    for child in page.findChildren(QWidget):
+        if child.parent() is not page:
+            continue
+        label = _DESCRIBABLE_KIND_LABELS.get(type(child).__name__)
+        if label is None:
+            continue
+        text = child.text().strip() if hasattr(child, "text") and callable(child.text) else ""
+        items.append(f"  - {label}: {text}" if text else f"  - {label}")
+    return items
+
+
+def _describe_page_entries(page):
+    """Like `_describe_page_widgets`, but for a builder `CanvasPage`: reads
+    the natural-language `instruction` each widget's behavior was generated
+    from, so a button is described by what it actually does when clicked,
+    not just its label."""
+    items = []
+    for entry in page.entries.values():
+        kind = entry.get("kind")
+        if kind in _PANEL_DESCRIPTIONS:
+            items.append(f"  - {_PANEL_LABELS[kind]}: {_PANEL_DESCRIPTIONS[kind]}")
+            continue
+        label = _ENTRY_KIND_LABELS.get(kind, kind)
+        text = (entry.get("text") or "").strip()
+        items.append(f'  - {label} "{text}"' if text else f"  - {label}")
+        instruction = (entry.get("instruction") or "").strip()
+        if instruction:
+            instruction_lines = instruction.splitlines()
+            items.append(f"    동작: {instruction_lines[0]}")
+            items.extend(f"    {line}" for line in instruction_lines[1:])
+    return items
+
+
+def app_overview_text(page):
+    """Live overview of the whole app: current tab list and how many
+    widgets each holds. Recomputed on every call by reading the actual
+    tab widget, so it never goes stale when tabs are added/removed/edited."""
+    pages = _tab_pages(page)
+    lines = [
+        "이 앱은 사용자가 직접 만든 개인용 도구 모음입니다.",
+        f"현재 {len(pages)}개의 탭이 있습니다:",
+        "",
+    ]
+    for title, tab_page in pages:
+        count = len(tab_page.entries) if hasattr(tab_page, "entries") else len(_describe_page_widgets(tab_page))
+        lines.append(f"- {title} ({count}개 항목)")
+    lines.append("")
+    lines.append("각 탭의 자세한 사용법은 '각 탭에 대한 설명' 버튼을 눌러 확인하세요.")
+    return "\n".join(lines)
+
+
+def tab_usage_text(page):
+    """Live per-tab breakdown of every widget - including, when available,
+    what each button actually does when clicked. Recomputed on every call,
+    so it never goes stale when tabs/widgets change."""
+    lines = []
+    for title, tab_page in _tab_pages(page):
+        lines.append(f"[{title}]")
+        if hasattr(tab_page, "entries"):
+            widget_lines = _describe_page_entries(tab_page)
+        else:
+            widget_lines = _describe_page_widgets(tab_page)
+        lines.extend(widget_lines if widget_lines else ["  (빈 탭)"])
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def show_text_dialog(parent, title, text):
+    """Shows a titled, scrollable, read-only text window - for descriptions
+    too long to comfortably fit in a QMessageBox."""
+    dialog = QDialog(parent)
+    dialog.setWindowTitle(title)
+    dialog.resize(520, 480)
+    layout = QVBoxLayout(dialog)
+    text_edit = QTextEdit()
+    text_edit.setReadOnly(True)
+    text_edit.setPlainText(text)
+    layout.addWidget(text_edit)
+    close_button = QPushButton("닫기")
+    close_button.clicked.connect(dialog.accept)
+    layout.addWidget(close_button)
+    dialog.exec()
+
+
+def pick_startup_file(parent):
+    """Opens a file picker starting in this app's `standalone` export
+    folder. Returns the chosen path, or None if the user canceled."""
+    standalone_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "standalone")
+    path, _ = QFileDialog.getOpenFileName(
+        parent,
+        "시작 프로그램에 등록/삭제할 파일 선택",
+        standalone_dir,
+        "실행 파일 (*.exe);;모든 파일 (*.*)",
+    )
+    return path or None
+
+
+def add_to_startup(path):
+    """Registers `path` to launch at Windows login via the current user's
+    registry Run key. The value name is the file's basename without
+    extension, so re-registering the same file overwrites its own entry
+    instead of duplicating it."""
+    if not path:
+        return False
+    name = os.path.splitext(os.path.basename(path))[0]
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _STARTUP_RUN_KEY, 0, winreg.KEY_SET_VALUE)
+    try:
+        winreg.SetValueEx(key, name, 0, winreg.REG_SZ, f'"{path}"')
+    finally:
+        winreg.CloseKey(key)
+    return True
+
+
+def remove_from_startup(path):
+    """Removes the Run-key entry that add_to_startup would have created for
+    `path` (matched by basename without extension). Returns False if there
+    was no such entry."""
+    if not path:
+        return False
+    name = os.path.splitext(os.path.basename(path))[0]
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _STARTUP_RUN_KEY, 0, winreg.KEY_SET_VALUE)
+    try:
+        winreg.DeleteValue(key, name)
+    except FileNotFoundError:
+        return False
+    finally:
+        winreg.CloseKey(key)
+    return True
 
 
 def _make_delete_file(parent):
@@ -210,6 +421,12 @@ def compile_handler(code, canvas):
         "extract_images": extract_images,
         "download_file": download_file,
         "classify_image_with_claude": classify_image_with_claude,
+        "show_text_dialog": show_text_dialog,
+        "pick_startup_file": pick_startup_file,
+        "add_to_startup": add_to_startup,
+        "remove_from_startup": remove_from_startup,
+        "app_overview_text": app_overview_text,
+        "tab_usage_text": tab_usage_text,
     }
     try:
         exec(code, namespace)
@@ -231,7 +448,8 @@ def compile_handler(code, canvas):
                 "보안을 위해 생성된 코드에서는 import를 쓸 수 없고, 아래 함수만 사용 가능합니다:\n"
                 "open_url / read_file / write_file / delete_file / list_dir / make_dir / "
                 "move_file / fetch_url / html_to_markdown / extract_images / download_file / "
-                "classify_image_with_claude\n\n"
+                "classify_image_with_claude / show_text_dialog / pick_startup_file / "
+                "add_to_startup / remove_from_startup / app_overview_text / tab_usage_text\n\n"
                 "'동작 설정'에서 원하는 동작을 이 함수들로 표현되게 다시 설명해서 재생성해보세요.",
             )
         except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
