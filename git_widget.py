@@ -477,8 +477,23 @@ class _RepoPairBox(QFrame):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(4)
 
+        # remote/local 라벨 폭을 통일해야 두 QLineEdit(stretch=1)의 시작 x좌표가
+        # 같아지고, 결과적으로 두 입력창의 실제 폭도 서로 같아짐 ("remote:"가
+        # "local:"보다 길어서 라벨 폭을 맞추지 않으면 입력창 폭이 서로 달라짐).
+        # +12px 여유를 둬서 라벨(=remote/local 텍스트 창) 폭을 조금 더 넓히고, 그만큼
+        # 뒤에 오는 입력창(stretch=1)이 조금 줄어듦. "local:"처럼 원래 텍스트보다 넓은
+        # 라벨 안에서는 가운데 정렬로 표시함(기본 왼쪽 정렬이면 텍스트가 한쪽에
+        # 치우쳐 보임).
+        label_width = (
+            max(QLabel("remote:").sizeHint().width(), QLabel("local:").sizeHint().width())
+            + 12
+        )
+
         remote_row = QHBoxLayout()
-        remote_row.addWidget(QLabel("remote:"))
+        remote_label = QLabel("remote:")
+        remote_label.setFixedWidth(label_width)
+        remote_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        remote_row.addWidget(remote_label)
         self.remote_edit = QLineEdit(remote_text)
         self.remote_edit.setPlaceholderText("remote 저장소 URL")
         remote_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirLinkIcon)
@@ -492,7 +507,10 @@ class _RepoPairBox(QFrame):
         layout.addLayout(remote_row)
 
         local_row = QHBoxLayout()
-        local_row.addWidget(QLabel("local:"))
+        local_label = QLabel("local:")
+        local_label.setFixedWidth(label_width)
+        local_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        local_row.addWidget(local_label)
         self.local_edit = QLineEdit(local_text)
         self.local_edit.setPlaceholderText("local 디렉토리 경로")
         dir_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
@@ -772,7 +790,12 @@ class GitPanel(QWidget):
         self.setStyleSheet("GitPanel { background-color: transparent; }")
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 10, 12, 10)
+        # 위쪽 여백을 줄여서 상단 버튼 두 개를 조금 위로 올리고, 아래쪽 여백은
+        # 좌우 여백(12)과 같게 맞춤(예전엔 10이었는데, 실제로는 트레일링
+        # addStretch()가 패널에 할당된 캔버스 높이의 남는 공간을 전부 떠안아서
+        # 체감 여백이 훨씬 커 보였음 - addStretch를 없애고 패널 캔버스 높이
+        # 자체를 내용물에 맞게 줄이는 쪽으로 대신 해결함).
+        outer.setContentsMargins(12, 4, 12, 12)
         outer.setSpacing(10)
 
         top_row = QHBoxLayout()
@@ -810,7 +833,6 @@ class GitPanel(QWidget):
             self.pair_boxes.append(box)
             grid.addWidget(box, i // 2, i % 2)
         outer.addLayout(grid)
-        outer.addStretch()
 
     def _save_all_pairs(self):
         data = [

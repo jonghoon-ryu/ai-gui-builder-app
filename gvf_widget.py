@@ -85,16 +85,22 @@ class _DigitalTimeBox(QFrame):
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(0)
 
-        self.start_label = QLabel("시작 00:00:00")
-        self.end_label = QLabel("종료 00:00:00")
+        # 초 단위는 표시하지 않음(요청) - 그만큼 비는 가로 공간을 글자 크기를
+        # 키워서 채움(17px, 기존 "00:00:00" 12px 폭과 비슷하게 맞춘 값).
+        self.start_label = QLabel("시작 00:00")
+        self.end_label = QLabel("종료 00:00")
         for label in (self.start_label, self.end_label):
             label.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
             label.setStyleSheet(
                 "background-color: transparent; color: #4be36a;"
-                " font-family: Consolas, monospace; font-size: 12px;"
+                " font-family: Consolas, monospace; font-size: 16px;"
             )
             layout.addWidget(label)
-        self.setMinimumWidth(layout.sizeHint().width())
+        # setFixedWidth(고정)을 써야 함 - setMinimumWidth만 쓰면 이 위젯이 유일하게
+        # 명시적 최대 폭이 없는 항목이라, row가 패널 폭보다 여유가 있을 때 그 남는
+        # 공간을 전부 이 시계가 혼자 흡수해버려서(예: 25% 줄인 값이 화면에 그대로
+        # 반영 안 되고 도로 커짐) "가로 길이를 N%만큼 줄인다"는 요청이 무의미해짐.
+        self.setFixedWidth(layout.sizeHint().width())
 
 
 class _DisplayRow(QFrame):
@@ -107,32 +113,39 @@ class _DisplayRow(QFrame):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(3)
 
         self.display_label = QLabel(f"FPGA #{index}")
         self.display_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.display_label.setStyleSheet(
             "background-color: #ffffff; border: 1px solid #ced2db; border-radius: 5px;"
+            " font-size: 11px;"
         )
-        self.display_label.setFixedWidth(90)
-        self.display_label.setMinimumHeight(44)
+        self.display_label.setFixedWidth(68)
+        self.display_label.setMinimumHeight(40)
         layout.addWidget(self.display_label)
 
         self.number_edit = QLineEdit(self)
         self.number_edit.setPlaceholderText("000")
         self.number_edit.setMaxLength(3)
         self.number_edit.setValidator(QIntValidator(0, 999, self.number_edit))
-        self.number_edit.setFixedWidth(46)
+        self.number_edit.setFixedWidth(38)
         layout.addWidget(self.number_edit)
 
         self.time_box = _DigitalTimeBox(self)
         layout.addWidget(self.time_box)
 
-        layout.addStretch(1)
-
         self.return_button = QPushButton("반납", self)
         return_size = self.return_button.sizeHint()
-        self.return_button.setFixedSize(int(return_size.width() * 1.5), int(return_size.height() * 1.5))
+        button_size = (
+            int(return_size.width() * 1.5 * 0.9 * 0.9),
+            int(return_size.height() * 1.5 * 0.9),
+        )
+        self.return_button.setFixedSize(*button_size)
+
+        self.owned_button = QPushButton("소유중", self)
+        self.owned_button.setFixedSize(*button_size)
+        layout.addWidget(self.owned_button)
         layout.addWidget(self.return_button)
 
 
@@ -157,6 +170,7 @@ class GvfPanel(QWidget):
         outer.addWidget(group)
 
         group_layout = QVBoxLayout(group)
+        group_layout.setContentsMargins(4, 10, 4, 10)
         group_layout.setSpacing(10)
 
         self.rows = []
@@ -185,11 +199,11 @@ DEFAULT_MAX_FPGA_COUNT = 1
 class FpgaAcquisitionPanel(QWidget):
     """'gvf' 탭 우측 상단 위젯: "FPGA 자원 취득" 그룹박스(뼈대만).
 
-    맨 위 "아이디" 문자열 입력창(`QLineEdit`), "FPGA 획득 마지막 시도" 시간
-    입력(`QTimeEdit`), "FPGA 취득 간격"(분 단위, 기본 120분, 스핀박스로 조절
-    가능), "max FPGA 취득"(최솟값 1, 기본값 1, 스핀박스로 조절 가능), "명령어
-    입력 디렉토리" 경로 입력(git 탭의 local 디렉토리 입력창과 같은 방식 - 폴더
-    아이콘을 누르면 Windows 폴더 선택 창이 뜸), "FPGA 대기열 삭제" 버튼, 맨 아래
+    맨 위 "아이디" 문자열 입력창(`QLineEdit`), 그 아래 "명령어 입력 디렉토리" 경로
+    입력(git 탭의 local 디렉토리 입력창과 같은 방식 - 폴더 아이콘을 누르면 Windows
+    폴더 선택 창이 뜸), "FPGA 획득 마지막 시도" 시간 입력(`QTimeEdit`), "FPGA 취득
+    간격"(분 단위, 기본 120분, 스핀박스로 조절 가능)과 "max FPGA 취득"(최솟값 1,
+    기본값 1, 스핀박스로 조절 가능)이 한 줄에, "FPGA 대기열 삭제" 버튼, 맨 아래
     시작/중지 버튼 한 쌍까지 일곱 줄만 잡아둔 상태 - 실제로 아이디를 어디에
     쓸지, 그 간격마다 자동으로 획득을 시도하거나 그 디렉토리에서 명령어를
     실행하는 로직, "FPGA 대기열 삭제"/시작/중지 버튼을 눌렀을 때의 실제 동작은
@@ -207,6 +221,7 @@ class FpgaAcquisitionPanel(QWidget):
         outer.addWidget(group)
 
         form = QVBoxLayout(group)
+        form.setContentsMargins(15, 10, 15, 10)
         form.setSpacing(10)
 
         id_row = QHBoxLayout()
@@ -214,33 +229,6 @@ class FpgaAcquisitionPanel(QWidget):
         self.id_edit = QLineEdit(group)
         id_row.addWidget(self.id_edit, 1)
         form.addLayout(id_row)
-
-        last_try_row = QHBoxLayout()
-        last_try_row.addWidget(QLabel("FPGA 획득 마지막 시도"))
-        self.last_attempt_time = QTimeEdit(QTime.currentTime(), group)
-        self.last_attempt_time.setDisplayFormat("HH:mm:ss")
-        last_try_row.addWidget(self.last_attempt_time)
-        last_try_row.addStretch(1)
-        form.addLayout(last_try_row)
-
-        interval_row = QHBoxLayout()
-        interval_row.addWidget(QLabel("FPGA 취득 간격"))
-        self.interval_minutes = QSpinBox(group)
-        self.interval_minutes.setRange(1, 1440)
-        self.interval_minutes.setValue(DEFAULT_ACQUISITION_INTERVAL_MINUTES)
-        self.interval_minutes.setSuffix(" 분")
-        interval_row.addWidget(self.interval_minutes)
-        interval_row.addStretch(1)
-        form.addLayout(interval_row)
-
-        max_count_row = QHBoxLayout()
-        max_count_row.addWidget(QLabel("max FPGA 취득"))
-        self.max_fpga_count = QSpinBox(group)
-        self.max_fpga_count.setRange(1, 999)
-        self.max_fpga_count.setValue(DEFAULT_MAX_FPGA_COUNT)
-        max_count_row.addWidget(self.max_fpga_count)
-        max_count_row.addStretch(1)
-        form.addLayout(max_count_row)
 
         self.command_dir_edit = QLineEdit(group)
         self.command_dir_edit.setPlaceholderText("명령어 입력 디렉토리")
@@ -252,17 +240,61 @@ class FpgaAcquisitionPanel(QWidget):
         dir_action.triggered.connect(self._browse_command_dir)
         form.addWidget(self.command_dir_edit)
 
+        last_try_row = QHBoxLayout()
+        last_try_row.addWidget(QLabel("FPGA 획득 마지막 시도"))
+        self.last_attempt_time = QTimeEdit(QTime.currentTime(), group)
+        self.last_attempt_time.setDisplayFormat("HH:mm:ss")
+        self.last_attempt_time.setFixedHeight(26)
+        last_try_row.addWidget(self.last_attempt_time)
+        last_try_row.addStretch(1)
+        form.addLayout(last_try_row)
+
+        # 한 줄에 label 2개 + spinbox 2개를 모두 넣어야 해서(요청: "max FPGA 취득"을
+        # "FPGA 취득 간격" 오른쪽으로), 폭이 빠듯함 - 이 줄의 라벨 두 개만 살짝 작은
+        # 글자(11px, 다른 줄 라벨은 그대로)를 써서 필요한 가로 폭을 줄임.
+        interval_row = QHBoxLayout()
+        interval_label = QLabel("FPGA 취득 간격")
+        interval_label.setStyleSheet("font-size: 11px;")
+        interval_row.addWidget(interval_label)
+        self.interval_minutes = QSpinBox(group)
+        self.interval_minutes.setRange(1, 1440)
+        self.interval_minutes.setValue(DEFAULT_ACQUISITION_INTERVAL_MINUTES)
+        self.interval_minutes.setSuffix(" 분")
+        self.interval_minutes.setMaximumWidth(62)
+        self.interval_minutes.setFixedHeight(26)
+        interval_row.addWidget(self.interval_minutes)
+        interval_row.addStretch(1)
+        max_count_label = QLabel("max FPGA 취득")
+        max_count_label.setStyleSheet("font-size: 11px;")
+        interval_row.addWidget(max_count_label)
+        self.max_fpga_count = QSpinBox(group)
+        self.max_fpga_count.setRange(1, 999)
+        self.max_fpga_count.setValue(DEFAULT_MAX_FPGA_COUNT)
+        self.max_fpga_count.setMaximumWidth(42)
+        self.max_fpga_count.setFixedHeight(26)
+        interval_row.addWidget(self.max_fpga_count)
+        form.addLayout(interval_row)
+
         self.clear_queue_button = QPushButton("FPGA 대기열 삭제", group)
+        self.clear_queue_button.setFixedHeight(26)
         form.addWidget(self.clear_queue_button)
 
         control_row = QHBoxLayout()
         self.start_button = QPushButton("시작", group)
+        self.start_button.setFixedHeight(26)
         self.start_button.clicked.connect(self._on_start_clicked)
         control_row.addWidget(self.start_button)
         self.stop_button = QPushButton("중지", group)
+        self.stop_button.setFixedHeight(26)
         self.stop_button.clicked.connect(self._on_stop_clicked)
         control_row.addWidget(self.stop_button)
         form.addLayout(control_row)
+
+        # max FPGA 취득 줄을 FPGA 취득 간격 줄에 합쳐서 항목이 7개에서 6개로 줄어든
+        # 만큼, 사각형 세로 길이(패널 높이)는 그대로 두고 남는 공간을 6개 항목에 균등
+        # 배분해 각 항목의 세로 길이가 서로 같아지도록 함.
+        for i in range(form.count()):
+            form.setStretch(i, 1)
 
         self._restore_state()
         self.id_edit.editingFinished.connect(self._save_state)
@@ -316,6 +348,7 @@ class FpgaAcquisitionPanel(QWidget):
 FPGA_VERSION_ITEMS = ["FPGA v18.0", "FPGA v19.0", "FPGA v24.0", "FPGA v25.0"]
 FPGA_NUMBER_ITEMS = ["FPGA #1", "FPGA #2", "FPGA #3"]
 FPGA_MEMORY_TYPE_ITEMS = ["TLC", "QLC", "SLC/QLC", "TLC/QLC"]
+FPGA_OS_ITEMS = ["linux", "windows", "test"]
 
 
 def _radio_group(items, parent):
@@ -335,9 +368,9 @@ def _radio_group(items, parent):
 class FpgaLoadingPanel(QWidget):
     """'gvf' 탭 하단 위젯: "FPGA loading" 그룹박스(뼈대만).
 
-    라디오 버튼 그룹 3개(FPGA 버전, FPGA 번호 - "FPGA #1"/"FPGA #2"/"FPGA #3"
-    각각 옆에 숫자 3자리 입력칸이 붙음, 메모리 타입)를 한 줄에 나열하고, 맨
-    오른쪽에 "시작" 버튼(기본 크기의 1.5배)을 놓는다. 선택된 라디오 버튼/숫자
+    라디오 버튼 그룹 4개(FPGA 버전, FPGA 번호 - "FPGA #1"/"FPGA #2"/"FPGA #3"
+    각각 옆에 숫자 3자리 입력칸이 붙음, 메모리 타입, OS - linux/windows/test)를
+    한 줄에 나열하고, 맨 오른쪽에 "시작" 버튼(기본 크기의 1.5배)을 놓는다. 선택된 라디오 버튼/숫자
     입력값은 바뀔 때마다 자동으로 `appData/gvf_state.json`("loading" 키)에
     저장되고 재시작 시 복원된다. 실제로 "시작" 버튼을 눌렀을 때 무슨 일이
     일어나는지는 아직 없음(다음에 이어서 구현)."""
@@ -364,24 +397,28 @@ class FpgaLoadingPanel(QWidget):
         # 간격(group_layout.setSpacing(10))과 맞춤. 위쪽은 QGroupBox가 제목
         # 글자를 위해 항상 별도 공간을 예약하는 스타일 특성 때문에 0으로 둬도
         # 시각적으로 다른 방향과 비슷해짐(헤드리스 픽셀 측정으로 확인함).
-        form.setContentsMargins(10, 0, 10, 10)
+        form.setContentsMargins(15, 0, 15, 10)
         form.setSpacing(10)
 
         # 라디오 버튼을 한 줄로 나란히 늘어놓으면 폭이 지나치게 넓어져서(11개
         # 라디오 버튼 기준 1500px+), 그룹별로 세로로 쌓은 좁은 열 3개를 만들고
         # 그 열들을 가로로 배치하는 방식으로 바꿈 - 맨 오른쪽에 "시작" 버튼.
         row = QHBoxLayout()
-        row.setSpacing(80)
+        # OS 라디오 그룹(4번째 열)이 추가되면서 기존 80px 간격을 유지하면 필요
+        # 폭이 캔버스 폭을 크게 초과해서(978px vs 794px 가용), 4개 열이 모두
+        # 들어가도록 32px까지 줄였다가, "간격이 너무 좁다"는 요청으로 30% 늘림
+        # (다른 요소들(숫자 입력칸 등) 폭을 줄여서 확보한 여유를 여기로 돌림).
+        row.setSpacing(29)
 
         version_col = QVBoxLayout()
-        version_col.setSpacing(4)
+        version_col.setSpacing(2)
         self.version_group, self.version_buttons = _radio_group(FPGA_VERSION_ITEMS, group)
         for radio in self.version_buttons:
             version_col.addWidget(radio)
         row.addLayout(version_col)
 
         number_col = QVBoxLayout()
-        number_col.setSpacing(4)
+        number_col.setSpacing(2)
         self.number_group, self.number_buttons = _radio_group(FPGA_NUMBER_ITEMS, group)
         self.number_value_edits = []
         for radio in self.number_buttons:
@@ -392,14 +429,14 @@ class FpgaLoadingPanel(QWidget):
             number_value_edit.setPlaceholderText("000")
             number_value_edit.setMaxLength(3)
             number_value_edit.setValidator(QIntValidator(0, 999, number_value_edit))
-            number_value_edit.setFixedWidth(46)
+            number_value_edit.setFixedWidth(41)
             entry_row.addWidget(number_value_edit)
             self.number_value_edits.append(number_value_edit)
             number_col.addLayout(entry_row)
         row.addLayout(number_col)
 
         memory_col = QVBoxLayout()
-        memory_col.setSpacing(4)
+        memory_col.setSpacing(2)
         self.memory_type_group, self.memory_type_buttons = _radio_group(
             FPGA_MEMORY_TYPE_ITEMS, group
         )
@@ -407,11 +444,19 @@ class FpgaLoadingPanel(QWidget):
             memory_col.addWidget(radio)
         row.addLayout(memory_col)
 
+        os_col = QVBoxLayout()
+        os_col.setSpacing(2)
+        self.os_group, self.os_buttons = _radio_group(FPGA_OS_ITEMS, group)
+        for radio in self.os_buttons:
+            os_col.addWidget(radio)
+        row.addLayout(os_col)
+
         row.addStretch(1)
 
         self.start_button = QPushButton("시작", group)
         start_size = self.start_button.sizeHint()
-        self.start_button.setFixedSize(int(start_size.width() * 3), int(start_size.height() * 3))
+        # 세로 길이는 요청으로 기존(자연 크기의 3배)의 2배인 자연 크기의 6배로 키움.
+        self.start_button.setFixedSize(int(start_size.width() * 3), int(start_size.height() * 6))
         row.addWidget(self.start_button, 0, Qt.AlignmentFlag.AlignVCenter)
 
         form.addLayout(row)
@@ -420,6 +465,7 @@ class FpgaLoadingPanel(QWidget):
         self.version_group.buttonClicked.connect(self._save_state)
         self.number_group.buttonClicked.connect(self._save_state)
         self.memory_type_group.buttonClicked.connect(self._save_state)
+        self.os_group.buttonClicked.connect(self._save_state)
         for number_value_edit in self.number_value_edits:
             number_value_edit.editingFinished.connect(self._save_state)
 
@@ -442,6 +488,11 @@ class FpgaLoadingPanel(QWidget):
             for radio in self.memory_type_buttons:
                 if radio.text() == memory_type:
                     radio.setChecked(True)
+        os_name = loading.get("os")
+        if os_name:
+            for radio in self.os_buttons:
+                if radio.text() == os_name:
+                    radio.setChecked(True)
 
     def _save_state(self):
         checked_version = next((b.text() for b in self.version_buttons if b.isChecked()), None)
@@ -449,6 +500,7 @@ class FpgaLoadingPanel(QWidget):
         checked_memory_type = next(
             (b.text() for b in self.memory_type_buttons if b.isChecked()), None
         )
+        checked_os = next((b.text() for b in self.os_buttons if b.isChecked()), None)
         _update_gvf_state(
             "loading",
             {
@@ -456,5 +508,6 @@ class FpgaLoadingPanel(QWidget):
                 "number": checked_number,
                 "number_values": [edit.text() for edit in self.number_value_edits],
                 "memory_type": checked_memory_type,
+                "os": checked_os,
             },
         )
