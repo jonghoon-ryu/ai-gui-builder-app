@@ -14,7 +14,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -35,6 +35,30 @@ _GIT_TIMEOUT_SECONDS = 20
 RESULT_SAME_COLOR = "#3aa655"
 RESULT_DIFF_COLOR = "#d64545"
 _SKIP_DIR_NAMES = {".git", "node_modules", "$RECYCLE.BIN", "System Volume Information"}
+
+# "local drive 검색"/"전체 status check" 상단 버튼 2개를 나머지 평범한 흰 버튼들보다
+# 진하게 강조하기 위한 스타일 (탭 전체를 작동시키는 주요 동작 버튼이라 눈에 띄어야 함).
+_PRIMARY_BUTTON_STYLE = """
+QPushButton {
+    background-color: #5b72e0;
+    color: #ffffff;
+    border: 1px solid #4a5fc7;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-weight: bold;
+}
+QPushButton:hover {
+    background-color: #4a5fc7;
+}
+QPushButton:pressed {
+    background-color: #3d4fb0;
+}
+QPushButton:disabled {
+    background-color: #aab2e8;
+    color: #f0f0f0;
+    border-color: #aab2e8;
+}
+"""
 
 # PyInstaller onefile builds unpack __file__ into a temp dir that's wiped
 # after exit, so state saved there wouldn't survive a restart - save next to
@@ -90,20 +114,30 @@ def _existing_drive_roots():
     return [f"{letter}:\\" for letter in "CDE" if os.path.exists(f"{letter}:\\")]
 
 
-def find_git_repos(drive_roots, limit=None):
+DRIVE_SEARCH_MAX_DEPTH = 3
+
+
+def find_git_repos(drive_roots, limit=None, max_depth=DRIVE_SEARCH_MAX_DEPTH):
     """Walks each drive root looking for a `.git` entry, skipping into it
-    (and a few other huge/irrelevant folders) once found. Stops as soon as
-    `limit` repos have been found, if given - a full-drive walk is
-    inherently slow, so callers should both cap it and run it off the UI
-    thread."""
+    (and a few other huge/irrelevant folders) once found. Only descends
+    `max_depth` levels of subdirectories below the drive root itself (a
+    full-drive walk is inherently slow) - a repo nested deeper than that
+    won't be found. Stops as soon as `limit` repos have been found, if
+    given. Callers should run this off the UI thread regardless, since even
+    a depth-capped walk can take a moment on a large drive."""
     found = []
     for root in drive_roots:
+        root_depth = root.rstrip(os.sep).count(os.sep)
         for dirpath, dirnames, filenames in os.walk(root, topdown=True, onerror=lambda _e: None):
             if ".git" in dirnames or ".git" in filenames:
                 found.append(dirpath)
                 if limit is not None and len(found) >= limit:
                     return found
-            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIR_NAMES]
+            depth = dirpath.rstrip(os.sep).count(os.sep) - root_depth
+            if depth >= max_depth:
+                dirnames[:] = []
+            else:
+                dirnames[:] = [d for d in dirnames if d not in _SKIP_DIR_NAMES]
     return found
 
 
@@ -276,6 +310,15 @@ class _RepoPairBox(QFrame):
         self._save_callback = save_callback
         self.setFrameShape(QFrame.Shape.Box)
         self.setLineWidth(1)
+        # 탭 바탕색이 무엇이든(사용자가 우클릭 메뉴로 바꿀 수 있음) 항상 그대로 비쳐
+        # 보이도록 배경은 투명하게 두고 테두리만 스타일시트로 명시함 (스타일시트를
+        # 하나라도 주면 setFrameShape의 네이티브 테두리가 무시되는 Qt 특성 때문에
+        # border도 같이 지정해야 함).
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            "_RepoPairBox { background-color: transparent; border: 1px solid #ced2db;"
+            " border-radius: 5px; }"
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -421,6 +464,11 @@ class GitPanel(QWidget):
         # starting empty.
         self._initial_pairs = initial_pairs
 
+        # 앱 전역 스타일시트가 모든 QWidget에 회색(#f4f5f8) 배경을 주기 때문에,
+        # 이걸 투명하게 비워서 탭 자체의 바탕색이 그대로 비쳐 보이게 함.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("GitPanel { background-color: transparent; }")
+
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 10, 12, 10)
         outer.setSpacing(10)
@@ -428,9 +476,11 @@ class GitPanel(QWidget):
         top_row = QHBoxLayout()
         self.scan_button = QPushButton("local drive 검색")
         self.scan_button.clicked.connect(self._run_local_drive_search)
+        self.scan_button.setStyleSheet(_PRIMARY_BUTTON_STYLE)
         top_row.addWidget(self.scan_button)
         self.status_button = QPushButton("전체 status check")
         self.status_button.clicked.connect(self._run_full_status_check)
+        self.status_button.setStyleSheet(_PRIMARY_BUTTON_STYLE)
         top_row.addWidget(self.status_button)
         outer.addLayout(top_row)
 
@@ -481,6 +531,16 @@ class GitPanel(QWidget):
             )
             return
 
+        reply = QMessageBox.question(
+            self,
+            "전체 status check",
+            "local repo와 remote repo와의 차이를 확인합니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
         self.status_button.setEnabled(False)
         self.status_button.setText("확인 중...")
         self._batch_worker = _BatchCompareWorker(jobs, self)
@@ -504,6 +564,17 @@ class GitPanel(QWidget):
         if not drives:
             QMessageBox.information(self, "안내", "검색할 드라이브를 찾을 수 없습니다.")
             return
+        reply = QMessageBox.question(
+            self,
+            "local drive 검색",
+            f"각 드라이브의 최상위 폴더 기준 {DRIVE_SEARCH_MAX_DEPTH}단계 하위 폴더까지만 "
+            "검색합니다.\n그보다 더 깊은 곳에 있는 저장소는 찾지 못할 수 있습니다.\n"
+            "기존 정보는 모두 지워집니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
         self.scan_button.setEnabled(False)
         self.scan_button.setText("검색 중...")
         self._scan_worker = _GitScanWorker(drives, self.PAIR_COUNT, self)
@@ -514,6 +585,10 @@ class GitPanel(QWidget):
     def _on_scan_succeeded(self, repos):
         self.scan_button.setEnabled(True)
         self.scan_button.setText("local drive 검색")
+        # 확인창에서 예고한 대로 기존 local 정보를 전부 지운 뒤 새로 찾은 것만 채움
+        # (이전엔 새로 찾은 개수가 6개보다 적으면 남은 상자들에 예전 값이 그대로 남아있었음).
+        for box in self.pair_boxes:
+            box.local_edit.setText("")
         for box, path in zip(self.pair_boxes, repos):
             box.local_edit.setText(path)
         self._save_all_pairs()
