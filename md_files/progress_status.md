@@ -930,6 +930,25 @@ autosave 파일이 없으면 조용히 넘어가고(다이얼로그 없음), 있
 `builder_state.json`을 대상으로도 앱을 재실행해서 autosave 파일이 없을 때 조용히 넘어가는 것까지
 확인함.
 
+**발견한 함정**: 이 기능이 생긴 뒤로는, 실제 빌더 앱이 켜져 있는 동안(타이머가 실제
+`builder_state.autosave.json`을 주기적으로 만들어냄) 헤드리스 스크립트로 `CanvasWindow()`를 또
+생성하면 `_check_and_offer_autosave_recovery()`가 진짜 `QMessageBox.question`을 띄우는데,
+`QT_QPA_PLATFORM=offscreen`에서는 클릭할 방법이 없어 그 프로세스가 영원히 멈춰버림(실제로 한 번
+겪어서 `TaskStop`으로 정리함). 앞으로 헤드리스 검증 스크립트를 돌릴 땐 실제 앱을 먼저 끄거나, 남아있는
+`builder_state.autosave.json`을 먼저 지우거나, `test_autosave.py`처럼 `STATE_FILE`/
+`AUTOSAVE_STATE_FILE`을 임시 경로로 monkeypatch해야 함 - memory에도 기록해둠.
+
+## 방향키로 위젯 미세 이동 추가 (2026-08-15)
+
+`future_work_for_poor_developer.md`의 4순위 항목. `CanvasPage.keyPressEvent`에 화살표 키 처리를
+추가했다 - 선택된 위젯(들)을 방향키로 1px, Shift+방향키로 10px씩 이동시킨다(`_nudge_selected_widgets`).
+마우스 드래그만으로는 1px 단위 정밀 배치가 사실상 불가능해서, 이번 세션 내내 정확한 좌표가 필요할
+때마다 `builder_state.json`을 직접 편집해야 했던 문제를 해결함. 기존 드래그 이동과 동일하게 캔버스
+경계를 벗어나지 못하도록 클램프 처리함. 다중 선택 상태에서는 선택된 위젯 전부가 같이 움직인다.
+
+헤드리스로 5가지 시나리오(오른쪽 1px 이동/Shift+아래 10px 이동/왼쪽 경계 클램프/오른쪽 경계 클램프/
+선택 없을 때 무동작)를 실제 `QKeyEvent`를 만들어 `keyPressEvent`에 직접 전달하는 방식으로 검증함.
+
 ## 실행 py 내보내기 이력
 
 기존 `standalone/` 디렉토리는 `executable_py/`로 이름이 바뀌었다 (2026-08-15). "실행 py 저장" 결과물이

@@ -1,7 +1,7 @@
 import json
 import os
 
-from PySide6.QtCore import QEvent, QRect, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -403,6 +403,15 @@ class CanvasPage(QWidget):
             self.update()
         super().mouseReleaseEvent(event)
 
+    _ARROW_KEY_DELTAS = {
+        Qt.Key.Key_Left: (-1, 0),
+        Qt.Key.Key_Right: (1, 0),
+        Qt.Key.Key_Up: (0, -1),
+        Qt.Key.Key_Down: (0, 1),
+    }
+    _NUDGE_STEP = 1
+    _NUDGE_STEP_SHIFT = 10
+
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) and self._selected_ids:
             self._delete_selected_widgets()
@@ -413,7 +422,34 @@ class CanvasPage(QWidget):
         if event.matches(QKeySequence.StandardKey.Paste):
             self._paste_clipboard()
             return
+        if event.key() in self._ARROW_KEY_DELTAS and self._selected_ids:
+            self._nudge_selected_widgets(event.key(), event.modifiers())
+            return
         super().keyPressEvent(event)
+
+    def _nudge_selected_widgets(self, key, modifiers):
+        """Moves every selected widget by 1px (Shift+arrow: 10px) - mouse
+        drag alone can't reliably place a widget at an exact pixel, which
+        kept forcing hand-edits of builder_state.json for precise layout
+        work (see md_files/future_work_for_poor_developer.md item 4)."""
+        dx, dy = self._ARROW_KEY_DELTAS[key]
+        step = (
+            self._NUDGE_STEP_SHIFT
+            if modifiers & Qt.KeyboardModifier.ShiftModifier
+            else self._NUDGE_STEP
+        )
+        for widget_id in self._selected_ids:
+            entry = self.entries.get(widget_id)
+            if entry is None:
+                continue
+            widget = entry["widget"]
+            new_pos = widget.pos() + QPoint(dx * step, dy * step)
+            max_x = max(0, self.width() - widget.width())
+            max_y = max(0, self.height() - widget.height())
+            new_pos.setX(min(max(0, new_pos.x()), max_x))
+            new_pos.setY(min(max(0, new_pos.y()), max_y))
+            widget.move(new_pos)
+        self.update()
 
     def _delete_selected_widgets(self):
         for widget_id in list(self._selected_ids):
