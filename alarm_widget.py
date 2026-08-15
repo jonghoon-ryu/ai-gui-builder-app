@@ -502,7 +502,7 @@ class AlarmClockPanel(QWidget):
             self._alarms = []
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 10, 12, 10)
+        outer.setContentsMargins(12, 10, 12, 12)
         outer.setSpacing(4)
 
         top_row = QHBoxLayout()
@@ -510,14 +510,14 @@ class AlarmClockPanel(QWidget):
         buttons_col.setSpacing(6)
         self.add_once_button = QPushButton("일회성 알람 추가")
         self.add_once_button.clicked.connect(self._add_once_alarm)
-        self.add_once_button.setMinimumHeight(36)
+        self.add_once_button.setMinimumHeight(44)
         self.add_recurring_button = QPushButton("주기적 알람 추가")
         self.add_recurring_button.clicked.connect(self._add_recurring_alarm)
-        self.add_recurring_button.setMinimumHeight(36)
+        self.add_recurring_button.setMinimumHeight(44)
         buttons_col.addWidget(self.add_once_button)
-        buttons_col.addSpacing(20)
+        buttons_col.addSpacing(12)
         buttons_col.addWidget(self.add_recurring_button)
-        buttons_col.addSpacing(20)
+        buttons_col.addSpacing(12)
 
         self.nl_edit = _MultilineAlarmEdit()
         self.nl_edit.setPlaceholderText(
@@ -530,7 +530,7 @@ class AlarmClockPanel(QWidget):
 
         self.nl_add_button = QPushButton("자연어로 알람 설정")
         self.nl_add_button.clicked.connect(self._add_alarm_from_text)
-        self.nl_add_button.setMinimumHeight(36)
+        self.nl_add_button.setMinimumHeight(44)
         buttons_col.addWidget(self.nl_add_button)
 
         self.nl_status_label = QLabel("")
@@ -538,7 +538,6 @@ class AlarmClockPanel(QWidget):
 
         self._nl_worker = None
 
-        buttons_col.addStretch()
         top_row.addLayout(buttons_col)
         top_row.addStretch(1)
         top_row.addSpacing(_cm_to_px(4))
@@ -565,10 +564,12 @@ class AlarmClockPanel(QWidget):
         list_title_row.addStretch(1)
         self.delete_all_button = QPushButton("알람 모두 삭제")
         self.delete_all_button.clicked.connect(self._delete_all_alarms)
+        self.delete_all_button.setMinimumHeight(44)
         list_title_row.addWidget(self.delete_all_button)
         outer.addLayout(list_title_row)
 
         self.list_widget = QListWidget()
+        self.list_widget.setMinimumHeight(90)
         outer.addWidget(self.list_widget)
 
         self._timer = QTimer(self)
