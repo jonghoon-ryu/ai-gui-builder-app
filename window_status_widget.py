@@ -9,6 +9,7 @@ CLAUDE.md's export guarantee).
 import ctypes
 import os
 import platform
+import shutil
 import string
 import struct
 import subprocess
@@ -22,6 +23,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QDialog,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -419,6 +421,82 @@ def get_folder_sizes():
     return results
 
 
+# ---- Temp folder cleanup -------------------------------------------------
+
+def get_temp_folder_path():
+    return os.environ.get("TEMP") or os.environ.get("TMP") or ""
+
+
+def get_temp_folder_summary():
+    """Returns (file_count, total_size_bytes) for every file under the Temp
+    folder, recursively. Walks the filesystem directly - can take a moment
+    for a large Temp folder, same tradeoff as get_folder_sizes."""
+    path = get_temp_folder_path()
+    if not path or not os.path.isdir(path):
+        return 0, 0
+    count = 0
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                continue
+            count += 1
+    return count, total
+
+
+def list_temp_files():
+    """Returns [{"name", "path", "size", "modified_at"}, ...] for every file
+    under the Temp folder, most-recently-modified first."""
+    path = get_temp_folder_path()
+    items = []
+    if not path or not os.path.isdir(path):
+        return items
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            full_path = os.path.join(root, name)
+            try:
+                stat = os.stat(full_path)
+            except OSError:
+                continue
+            items.append(
+                {
+                    "name": name,
+                    "path": full_path,
+                    "size": stat.st_size,
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime),
+                }
+            )
+    items.sort(key=lambda it: it["modified_at"], reverse=True)
+    return items
+
+
+def empty_temp_folder():
+    """Deletes everything directly under the Temp folder (files and
+    subfolders alike), skipping anything currently locked/in-use instead of
+    aborting - very common for Temp, since Windows and running apps
+    routinely keep files open there. Returns (deleted_count, skipped_count)
+    counted at the top level (a skipped subfolder counts as one, not per
+    file inside it)."""
+    path = get_temp_folder_path()
+    if not path or not os.path.isdir(path):
+        return 0, 0
+    deleted = 0
+    skipped = 0
+    for entry in os.listdir(path):
+        full_path = os.path.join(path, entry)
+        try:
+            if os.path.isdir(full_path) and not os.path.islink(full_path):
+                shutil.rmtree(full_path)
+            else:
+                os.remove(full_path)
+            deleted += 1
+        except OSError:
+            skipped += 1
+    return deleted, skipped
+
+
 # ---- Startup programs ---------------------------------------------------
 
 _RUN_KEYS = [
@@ -493,50 +571,62 @@ class WindowStatusPanel(QWidget):
         outer.setContentsMargins(12, 10, 12, 10)
         outer.setSpacing(8)
 
-        sys_title = QLabel("시스템 정보")
-        self._make_bold(sys_title)
-        outer.addWidget(sys_title)
-
+        # ---- 시스템 정보 ----
+        sys_group = QGroupBox("시스템 정보")
+        sys_layout = QVBoxLayout(sys_group)
         self.os_label = QLabel()
-        outer.addWidget(self.os_label)
+        sys_layout.addWidget(self.os_label)
         self.cpu_model_label = QLabel()
-        outer.addWidget(self.cpu_model_label)
+        sys_layout.addWidget(self.cpu_model_label)
+        outer.addWidget(sys_group)
+
+        # ---- 자원 사용률 ----
+        resource_group = QGroupBox("자원 사용률")
+        resource_layout = QVBoxLayout(resource_group)
 
         self.info_grid = QGridLayout()
         self.info_grid.setHorizontalSpacing(8)
         self.info_grid.setVerticalSpacing(4)
         self.info_grid.setColumnMinimumWidth(0, 90)
         self.info_grid.setColumnStretch(1, 1)
-        outer.addLayout(self.info_grid)
+        resource_layout.addLayout(self.info_grid)
 
         self.cpu_bar, self.cpu_value_label = self._add_meter_row("CPU 사용률:")
         self.mem_bar, self.mem_value_label = self._add_meter_row("메모리:")
 
         disk_title = QLabel("디스크")
         self._make_bold(disk_title)
-        outer.addWidget(disk_title)
+        resource_layout.addWidget(disk_title)
 
         self.disk_grid = QGridLayout()
         self.disk_grid.setHorizontalSpacing(8)
         self.disk_grid.setVerticalSpacing(4)
         self.disk_grid.setColumnMinimumWidth(0, 90)
         self.disk_grid.setColumnStretch(1, 1)
-        outer.addLayout(self.disk_grid)
+        resource_layout.addLayout(self.disk_grid)
 
-        actions_row = QHBoxLayout()
+        outer.addWidget(resource_group)
+
+        # ---- 확인 ----
+        check_group = QGroupBox("확인")
+        check_layout = QHBoxLayout(check_group)
         self.top_processes_button = QPushButton("상위 프로세스")
         self.top_processes_button.clicked.connect(self._show_top_processes)
-        actions_row.addWidget(self.top_processes_button)
+        check_layout.addWidget(self.top_processes_button)
         self.folder_sizes_button = QPushButton("폴더 용량")
         self.folder_sizes_button.clicked.connect(self._show_folder_sizes)
-        actions_row.addWidget(self.folder_sizes_button)
+        check_layout.addWidget(self.folder_sizes_button)
         self.startup_button = QPushButton("시작 프로그램 목록")
         self.startup_button.clicked.connect(self._show_startup_programs)
-        actions_row.addWidget(self.startup_button)
+        check_layout.addWidget(self.startup_button)
         self.env_vars_button = QPushButton("시스템 변수 바로보기")
         self.env_vars_button.clicked.connect(open_environment_variables_dialog)
-        actions_row.addWidget(self.env_vars_button)
-        outer.addLayout(actions_row)
+        check_layout.addWidget(self.env_vars_button)
+        outer.addWidget(check_group)
+
+        # ---- 휴지통, temp 파일 제거 ----
+        cleanup_group = QGroupBox("휴지통, temp 파일 제거")
+        cleanup_layout = QVBoxLayout(cleanup_group)
 
         bin_row = QHBoxLayout()
         bin_icon_label = QLabel()
@@ -551,11 +641,33 @@ class WindowStatusPanel(QWidget):
         self.bin_empty_button = QPushButton("휴지통 비우기")
         self.bin_empty_button.clicked.connect(self._empty_recycle_bin)
         bin_row.addWidget(self.bin_empty_button)
-        outer.addLayout(bin_row)
+        cleanup_layout.addLayout(bin_row)
+
+        temp_title = QLabel("temp 파일")
+        self._make_bold(temp_title)
+        cleanup_layout.addWidget(temp_title)
+
+        temp_row = QHBoxLayout()
+        temp_icon_label = QLabel()
+        temp_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+        temp_icon_label.setPixmap(temp_icon.pixmap(24, 24))
+        temp_row.addWidget(temp_icon_label)
+        self.temp_label = QLabel("temp 파일: 확인 중...")
+        temp_row.addWidget(self.temp_label, 1)
+        self.temp_list_button = QPushButton("목록")
+        self.temp_list_button.clicked.connect(self._show_temp_files)
+        temp_row.addWidget(self.temp_list_button)
+        self.temp_empty_button = QPushButton("temp 파일 비우기")
+        self.temp_empty_button.clicked.connect(self._empty_temp_folder)
+        temp_row.addWidget(self.temp_empty_button)
+        cleanup_layout.addLayout(temp_row)
+
+        outer.addWidget(cleanup_group)
 
         outer.addStretch()
 
         self._refresh()
+        self._refresh_temp_summary()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
         # Started/stopped from showEvent/hideEvent instead of here, so the
@@ -565,6 +677,7 @@ class WindowStatusPanel(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._refresh()
+        self._refresh_temp_summary()
         self._timer.start(self.REFRESH_INTERVAL_MS)
 
     def hideEvent(self, event):
@@ -720,6 +833,68 @@ class WindowStatusPanel(QWidget):
             QMessageBox.warning(self, "오류", f"휴지통을 비우지 못했습니다:\n{exc}")
             return
         self._refresh_recycle_bin_summary()
+
+    def _refresh_temp_summary(self):
+        count, size = get_temp_folder_summary()
+        self.temp_label.setText(f"temp 파일: {count}개 파일, {_format_bytes(size)}")
+
+    def _show_temp_files(self):
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        try:
+            items = list_temp_files()
+        finally:
+            self.unsetCursor()
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("temp 파일 목록")
+        dialog.resize(640, 420)
+        layout = QVBoxLayout(dialog)
+
+        table = QTableWidget(len(items), 3)
+        table.setHorizontalHeaderLabels(["이름", "경로", "크기"])
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        for row, item in enumerate(items):
+            table.setItem(row, 0, QTableWidgetItem(item["name"]))
+            # Same Hangul-truncation workaround as the recycle bin list.
+            path_label = QLabel(item["path"])
+            path_label.setToolTip(item["path"])
+            path_label.setContentsMargins(4, 0, 4, 0)
+            table.setCellWidget(row, 1, path_label)
+            table.setItem(row, 2, QTableWidgetItem(_format_bytes(item["size"])))
+        layout.addWidget(table)
+
+        if not items:
+            layout.addWidget(QLabel("temp 폴더가 비어 있습니다."))
+
+        close_button = QPushButton("닫기")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+
+        dialog.exec()
+
+    def _empty_temp_folder(self):
+        reply = QMessageBox.question(
+            self,
+            "temp 파일 비우기",
+            "temp 폴더의 파일을 모두 삭제하시겠습니까?\n사용 중인 파일/폴더는 자동으로 건너뜁니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        try:
+            deleted, skipped = empty_temp_folder()
+        finally:
+            self.unsetCursor()
+        self._refresh_temp_summary()
+        if skipped:
+            QMessageBox.information(
+                self,
+                "완료",
+                f"{deleted}개 항목을 삭제했습니다.\n{skipped}개는 사용 중이라 건너뛰었습니다.",
+            )
 
     def _show_top_processes(self):
         self.setCursor(Qt.CursorShape.WaitCursor)

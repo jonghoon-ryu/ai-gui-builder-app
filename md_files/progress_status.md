@@ -193,6 +193,25 @@ status check" 두 개의 독립된 버튼으로 정리됨).
 `entries`에 `checked` 필드를 추가해 `_save_state`/`generate_source`/복원 로직 세 군데를 함께 고치는
 후속 작업으로 진행할 수 있음.
 
+## 윈도우 현황 탭 그룹박스 4개로 재구성 + temp 파일 관리 추가 (2026-08-15)
+
+`window_status_widget.py`의 `WindowStatusPanel` 레이아웃을 제목 있는 테두리 박스(`QGroupBox`) 4개로
+재구성했다: **시스템 정보**(Windows 버전/CPU 모델) / **자원 사용률**(CPU/메모리/디스크) / **확인**
+(상위 프로세스/폴더 용량/시작 프로그램 목록/시스템 변수 바로보기 버튼 4개) / **휴지통, temp 파일
+제거**(휴지통 줄 + 그 밑에 같은 포맷의 temp 파일 줄). `theme.py`에 `QGroupBox` QSS를 새로 추가해서
+다른 컨트롤들과 톤이 맞는 테두리/제목 스타일을 줌(빌더/standalone 양쪽에 자동 반영, 파일 공유
+방식이라).
+
+**temp 파일 관리(신규 기능)**: 휴지통과 동일한 포맷(아이콘 + "N개 파일, 용량" 라벨 + 목록/비우기
+버튼 2개)으로 `%TEMP%` 폴더를 관리할 수 있게 됨. `get_temp_folder_summary`/`list_temp_files`는
+`get_folder_sizes`와 같은 방식(재귀적 `os.walk`)으로 temp 폴더를 스캔하고, `empty_temp_folder`는
+최상위 파일/폴더를 삭제 시도하되 사용 중이라 실패하는 항목은 `OSError`를 잡아 건너뛰고 개수를
+세서 돌려준다(휴지통과 달리 temp 폴더는 Windows/실행 중인 프로그램이 파일을 잠그고 있는 경우가
+흔해서 일부 실패를 정상 케이스로 취급). 건너뛴 게 있으면만 "N개 삭제, M개는 사용 중이라 건너뜀"
+안내 팝업이 뜸. temp 요약은 디스크/CPU처럼 8초 주기에 끼워 넣지 않고 탭 진입(construct/showEvent)
+시점에만 계산함 — 파일시스템 walk라 recycle bin 조회(네이티브 API)보다 느려서 8초마다 반복하기엔
+부담스러움. 실제 이 컴퓨터의 temp 폴더(5867개 파일, 5.2GB)로 목록/개수 일치를 직접 확인함.
+
 ## 윈도우 현황 갱신 주기 3초→8초 + 탭 선택 시에만 갱신 (2026-08-15)
 
 `window_status_widget.py`의 `WindowStatusPanel.REFRESH_INTERVAL_MS`를 3000에서 8000으로 늘리고,

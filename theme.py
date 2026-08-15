@@ -60,6 +60,19 @@ QListWidget::item:selected {
     color: #1c2130;
 }
 
+QGroupBox {
+    border: 1px solid #ced2db;
+    border-radius: 8px;
+    margin-top: 10px;
+    padding-top: 12px;
+    font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+}
+
 QTabWidget::pane {
     border: 0;
 }
