@@ -506,6 +506,39 @@ list 자체 높이는 124→92로 줄어든다 — 물리적으로 쓸 수 있�
 무관하게 모든 탭이 선택 시 같은 밑줄을 보이게 함. `tab_bar.py`는 빌더/standalone 양쪽에서 같은
 소스 파일을 그대로 쓰므로 한 번의 수정으로 양쪽 다 반영됨.
 
+## git 위젯: git clone 버튼 추가 (2026-08-15)
+
+"stash" 버튼 오른쪽에 **git clone** 버튼을 추가. 누르면 그 상자의 local 폴더를 통째로 비우고
+remote를 새로 clone한다: `git ls-remote`로 remote 주소를 먼저 검증(실패 시 에러만 띄우고 아무것도
+안 건드림) → local이 없으면 바로 clone, 있고 dirty하면 "저장할까요?" 확인 후 (예 선택 시 stash와
+같은 방식으로 `.orig`/`.current` 백업) 진행, clean하면 "전부 삭제하고 clone합니다" 확인 → local
+폴더를 비우고 새로 clone. 구현 중 겪은 문제와 해결:
+
+- **파일이 잠겨서 삭제 안 되는 경우** — Restart Manager API(`rstrtmgr.dll`, ctypes로
+  `RmStartSession`/`RmRegisterResources`/`RmGetList`/`RmEndSession` 호출)로 그 파일을 잡고 있는
+  프로세스(PID/이름)를 찾아서 "해당 프로세스를 중단할까요?"로 사용자에게 확인 후 `OpenProcess`+
+  `TerminateProcess`로 종료. 실제 subprocess로 파일을 열어놓고 테스트해서 검증함 — 이 과정에서
+  `sys.executable`(venv python.exe)이 런처 스텁을 거쳐 실행되어 `Popen.pid`가 실제 파일을 잠근
+  PID와 다르다는 것을 발견했지만, Restart Manager는 항상 실제로 파일을 잠근 PID를 정확히 찾아내므로
+  이건 테스트 스크립트에서만 신경 쓸 부분이고 프로덕션 코드엔 영향 없음.
+- **`.git` 폴더가 프로세스 잠금 없이도 삭제 안 되는 경우** — 처음엔 이것도 프로세스 잠금인 줄
+  알았으나 Restart Manager가 빈 목록을 반환함. 실제 원인은 git이 pack/object 파일을 읽기 전용
+  속성으로 만들어두는 Windows 특성이었음. `os.chmod(path, stat.S_IWRITE)` 후 재시도하는
+  `_clear_readonly_and_retry`로 해결.
+- **`TerminateProcess()` 직후 재시도가 실패하는 레이스 컨디션** — 프로세스가 종료돼도 OS가 파일
+  핸들을 즉시 놓아주지 않을 수 있어서, 종료 성공 후 바로 1회 재시도하면 여전히 실패할 때가 있었음.
+  최대 10회, 0.2초 간격 백오프 재시도로 해결.
+- **clone 대상 폴더가 비어있어야 하는 git 제약과 방금 만든 백업 폴더가 충돌하는 문제** — 백업
+  위치로 local 폴더 자신을 고른 경우, 그 백업 폴더만 남기고 나머지를 비운 뒤 바로 그 자리에
+  clone하면 "target not empty" 에러가 남. `tempfile.mkdtemp()`로 임시 디렉토리에 먼저 clone한 뒤
+  그 안의 내용물을 `shutil.move`로 local 폴더 안으로 옮기는 방식으로 우회.
+
+6가지 실제 시나리오(잘못된 remote / local 없음 / local 있고 clean / local 있고 dirty+백업 자기
+자신에 저장 / dirty+백업 거부 / 실제 프로세스 잠금+종료 동의)를 실제 로컬 git 저장소와 실제
+subprocess 잠금으로 헤드리스 테스트해서 전부 통과 확인. standalone 내보내기(`exporter.py`)에도
+동일 기능이 포함되어 있는지 생성된 소스에 `git clone`/`find_locking_processes`/`RmStartSession`
+문자열이 들어있고 `ast.parse`/`py_compile`이 통과하는 것으로 확인함.
+
 ## 알려진 미완/보류 항목
 
 - **Windows에서 `claude` CLI 호출**: `classify_image_with_claude`/`ai_client.py`가

@@ -7,11 +7,16 @@ app's user still needs `git` itself installed and on PATH, same as the
 "동작 설정" natural-language features need `claude`.
 """
 
+import ctypes
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
+import time
+from ctypes import wintypes
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -235,6 +240,154 @@ def stash_backup(path):
     return backup_root, saved
 
 
+# ---- Locked-file handling (for "git clone": wiping the local folder can hit
+# files another running process still has open) ---------------------------
+
+_CCH_RM_SESSION_KEY = 32
+_CCH_RM_MAX_APP_NAME = 255
+_CCH_RM_MAX_SVC_NAME = 63
+_RM_ERROR_MORE_DATA = 234
+_PROCESS_TERMINATE = 0x0001
+
+
+class _RM_UNIQUE_PROCESS(ctypes.Structure):
+    _fields_ = [
+        ("dwProcessId", wintypes.DWORD),
+        ("ProcessStartTime", wintypes.FILETIME),
+    ]
+
+
+class _RM_PROCESS_INFO(ctypes.Structure):
+    _fields_ = [
+        ("Process", _RM_UNIQUE_PROCESS),
+        ("strAppName", ctypes.c_wchar * (_CCH_RM_MAX_APP_NAME + 1)),
+        ("strServiceShortName", ctypes.c_wchar * (_CCH_RM_MAX_SVC_NAME + 1)),
+        ("ApplicationType", ctypes.c_int),
+        ("AppStatus", wintypes.ULONG),
+        ("TSSessionId", wintypes.DWORD),
+        ("bRestartable", wintypes.BOOL),
+    ]
+
+
+def find_locking_processes(path):
+    """Returns [(pid, name), ...] of processes currently holding `path`
+    open, via the Windows Restart Manager API (the same mechanism behind
+    "Resource Monitor"'s file-handle search). Returns [] if nothing has it
+    locked or the API call fails for any reason - callers treat that the
+    same as "unknown, nothing to offer the user"."""
+    try:
+        rstrtmgr = ctypes.WinDLL("rstrtmgr")
+    except OSError:
+        return []
+
+    session = wintypes.DWORD()
+    session_key = ctypes.create_unicode_buffer(_CCH_RM_SESSION_KEY + 1)
+    if rstrtmgr.RmStartSession(ctypes.byref(session), 0, session_key) != 0:
+        return []
+    try:
+        file_array = (ctypes.c_wchar_p * 1)(path)
+        if rstrtmgr.RmRegisterResources(session, 1, file_array, 0, None, 0, None) != 0:
+            return []
+
+        needed = wintypes.UINT(0)
+        count = wintypes.UINT(0)
+        reboot_reasons = wintypes.DWORD(0)
+        result = rstrtmgr.RmGetList(
+            session, ctypes.byref(needed), ctypes.byref(count), None, ctypes.byref(reboot_reasons)
+        )
+        if result not in (0, _RM_ERROR_MORE_DATA) or needed.value == 0:
+            return []
+
+        count.value = needed.value
+        proc_array = (_RM_PROCESS_INFO * needed.value)()
+        result = rstrtmgr.RmGetList(
+            session, ctypes.byref(needed), ctypes.byref(count), proc_array, ctypes.byref(reboot_reasons)
+        )
+        if result != 0:
+            return []
+        return [(p.Process.dwProcessId, p.strAppName) for p in proc_array[: count.value]]
+    finally:
+        rstrtmgr.RmEndSession(session)
+
+
+def terminate_process(pid):
+    """Force-terminates a process by PID. Returns True on success."""
+    handle = ctypes.windll.kernel32.OpenProcess(_PROCESS_TERMINATE, False, pid)
+    if not handle:
+        return False
+    try:
+        return bool(ctypes.windll.kernel32.TerminateProcess(handle, 1))
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def _clear_readonly_and_retry(path):
+    """A plain remove/rmtree commonly fails on a `.git` folder on Windows
+    even with nothing else touching it, because git marks its object/pack
+    files read-only - not an actual process lock, so Restart Manager would
+    find nothing. Clears the read-only attribute recursively and retries
+    before ever bothering the user about a "locking process". Returns True
+    if `path` is gone afterward."""
+
+    def _on_rmtree_error(func, target, _exc_info):
+        try:
+            os.chmod(target, stat.S_IWRITE)
+            func(target)
+        except OSError:
+            pass
+
+    try:
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path, onerror=_on_rmtree_error)
+        else:
+            os.chmod(path, stat.S_IWRITE)
+            os.remove(path)
+    except OSError:
+        pass
+    return not os.path.exists(path)
+
+
+def clear_directory(path, on_locked_file, exclude=None):
+    """Deletes everything directly under `path` (files and subfolders
+    alike) except names listed in `exclude`, leaving `path` itself in
+    place. When a file can't be removed even after clearing read-only
+    attributes (see `_clear_readonly_and_retry`) - i.e. another process
+    genuinely has it open - calls `on_locked_file(file_path, [(pid, name),
+    ...])`, which should return True to retry the deletion (e.g. after
+    killing the offending process(es)) or False to give up entirely.
+    Returns True if `path` ended up fully cleared (aside from anything in
+    `exclude`), False if something else was left behind (caller gave up on
+    it)."""
+    exclude = exclude or set()
+    ok = True
+    for entry in os.listdir(path):
+        if entry in exclude:
+            continue
+        full_path = os.path.join(path, entry)
+        if _clear_readonly_and_retry(full_path):
+            continue
+        while True:
+            locking = find_locking_processes(full_path)
+            if not on_locked_file(full_path, locking):
+                ok = False
+                break
+            # on_locked_file() said "retry" (e.g. it just killed the
+            # offending process(es)) - Windows can take a brief moment to
+            # fully release a handle after the owning process actually
+            # dies, so a removal attempted the instant TerminateProcess()
+            # returns can still fail. Give it a little room before asking
+            # find_locking_processes for another look.
+            removed = False
+            for _ in range(10):
+                if _clear_readonly_and_retry(full_path):
+                    removed = True
+                    break
+                time.sleep(0.2)
+            if removed:
+                break
+    return ok
+
+
 def _load_git_panel_state():
     if not os.path.exists(GIT_PANEL_STATE_FILE):
         return []
@@ -365,6 +518,9 @@ class _RepoPairBox(QFrame):
         self.stash_button = QPushButton("stash")
         self.stash_button.clicked.connect(self._stash)
         button_row.addWidget(self.stash_button)
+        self.clone_button = QPushButton("git clone")
+        self.clone_button.clicked.connect(self._git_clone)
+        button_row.addWidget(self.clone_button)
         layout.addLayout(button_row)
 
     def _prompt_remote_url(self):
@@ -446,6 +602,152 @@ class _RepoPairBox(QFrame):
         QMessageBox.information(
             self, "stash 완료", f"{count}개 파일의 원본/현재 버전을 저장했습니다.\n\n{backup_folder}"
         )
+
+    def _on_clone_locked_file(self, file_path, locking):
+        """Called from clear_directory() when a file can't be deleted
+        because another process has it open. Returns True to retry (after
+        killing the offending process(es), if the user agrees) or False to
+        give up on this file."""
+        if not locking:
+            QMessageBox.warning(
+                self, "삭제 실패", f"다른 프로그램이 사용 중이라 삭제할 수 없습니다:\n{file_path}"
+            )
+            return False
+        names = ", ".join(f"{name} (PID {pid})" for pid, name in locking)
+        reply = QMessageBox.question(
+            self,
+            "프로세스 종료",
+            f"다음 파일을 다른 프로세스가 사용 중이라 삭제할 수 없습니다:\n{file_path}\n\n"
+            f"사용 중인 프로세스: {names}\n\n해당 프로세스를 중단할까요?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return False
+        for pid, _name in locking:
+            terminate_process(pid)
+        return True
+
+    def _git_clone(self):
+        local = self.local_edit.text().strip()
+        remote = self.remote_edit.text().strip()
+        if not local or not remote:
+            QMessageBox.information(self, "안내", "remote와 local을 모두 입력하세요.")
+            return
+
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        remote_ok, _out, remote_err = _run_git(["ls-remote", remote])
+        self.unsetCursor()
+        if not remote_ok:
+            QMessageBox.critical(
+                self,
+                "git clone 실패",
+                "remote 저장소를 확인할 수 없습니다 (주소가 없거나 잘못됨):\n"
+                f"{remote_err or '알 수 없는 오류'}",
+            )
+            return
+
+        local_exists = os.path.isdir(local)
+        dirty = []
+        if local_exists:
+            try:
+                dirty = list_dirty_files(local)
+            except RuntimeError:
+                dirty = []
+
+        # Names directly under `local` to leave alone when wiping it below -
+        # only ever gets a name added if the user picks `local` itself (or a
+        # folder inside it) as the stash-backup destination, so the backup
+        # doesn't just get deleted again immediately after being made.
+        keep_names = set()
+
+        if dirty:
+            reply = QMessageBox.question(
+                self,
+                "git clone",
+                "모든 파일이 삭제됩니다. 현재 수정된 파일을 저장할까요?",
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Cancel:
+                return
+            if reply == QMessageBox.StandardButton.Yes:
+                # 동작은 stash 버튼과 동일: 백업할 디렉토리를 고르고 그 안에
+                # _stash_backup_시각/ 폴더로 원본/현재 버전을 저장함.
+                backup_dir = QFileDialog.getExistingDirectory(self, "stash할 디렉토리 선택", local)
+                if not backup_dir:
+                    return
+                try:
+                    backup_folder, count = stash_backup(backup_dir)
+                except RuntimeError as exc:
+                    QMessageBox.warning(self, "stash 실패", str(exc))
+                    return
+                if count:
+                    QMessageBox.information(
+                        self,
+                        "stash 완료",
+                        f"{count}개 파일의 원본/현재 버전을 저장했습니다.\n\n{backup_folder}",
+                    )
+                    local_abs = os.path.abspath(local)
+                    backup_abs = os.path.abspath(backup_folder)
+                    if os.path.commonpath([local_abs, backup_abs]) == local_abs:
+                        keep_names.add(os.path.relpath(backup_abs, local_abs).split(os.sep)[0])
+        elif local_exists:
+            reply = QMessageBox.question(
+                self,
+                "git clone",
+                "local 폴더의 모든 파일/서브디렉토리가 삭제되고 remote 저장소를 새로 "
+                "clone합니다. 계속하시겠습니까?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        self.clone_button.setEnabled(False)
+        self.clone_button.setText("clone 중...")
+        try:
+            if local_exists:
+                self.setCursor(Qt.CursorShape.WaitCursor)
+                cleared = clear_directory(local, self._on_clone_locked_file, exclude=keep_names)
+                self.unsetCursor()
+                if not cleared:
+                    QMessageBox.warning(
+                        self,
+                        "git clone 중단",
+                        "local 폴더를 완전히 비우지 못해 clone을 중단했습니다.",
+                    )
+                    return
+            else:
+                os.makedirs(local, exist_ok=True)
+
+            # Clone into a fresh temp directory rather than straight into
+            # `local` - if a stash backup folder was just created (and kept)
+            # inside `local`, that leaves `local` non-empty, and `git clone`
+            # refuses a non-empty target. Moving the cloned contents in
+            # afterward sidesteps that regardless of whether anything was
+            # kept.
+            tmp_clone_dir = tempfile.mkdtemp(prefix="git_clone_tmp_")
+            os.rmdir(tmp_clone_dir)
+            self.setCursor(Qt.CursorShape.WaitCursor)
+            clone_ok, clone_out, clone_err = _run_git(
+                ["clone", remote, tmp_clone_dir], timeout=600
+            )
+            self.unsetCursor()
+            if not clone_ok:
+                shutil.rmtree(tmp_clone_dir, ignore_errors=True)
+                QMessageBox.critical(self, "git clone 실패", clone_err or clone_out or "알 수 없는 오류")
+                return
+            for entry in os.listdir(tmp_clone_dir):
+                shutil.move(os.path.join(tmp_clone_dir, entry), os.path.join(local, entry))
+            shutil.rmtree(tmp_clone_dir, ignore_errors=True)
+        finally:
+            self.clone_button.setEnabled(True)
+            self.clone_button.setText("git clone")
+
+        QMessageBox.information(self, "git clone 완료", f"{remote}\n\n위 저장소를 clone했습니다.")
 
 
 class GitPanel(QWidget):
