@@ -31,29 +31,35 @@
    기능을 추가/변경할 때 이 목적에서 벗어나 불필요하게 복잡해지지 않도록 한다.
 
 2. **참고용 기본 예제 제공** — 사용자가 참고할 수 있는 기본 예제(간단한 위젯 + 동작 조합)를 제공한다.
-   현재 `standalone/2026_07_26/app.py`가 내보내기 결과물의 예시로 남아 있지만, 빌더 내에서 사용자가 바로 참고할 수 있는
-   형태의 예제는 아직 정리되어 있지 않다. 예제를 추가/수정할 때는 실제로 동작하는 최소 예제(위젯 1~2개 +
+   `executable_py/2026_07_26/app.py`가 내보내기 결과물의 예시로 남아 있고, 실제로는 빌더를 실행하면
+   `builder_state.json`에 저장된 실사용 탭 구성(git/wiki/윈도우 현황/alarm/쉬었다 합시다)이 그대로
+   화면에 뜨기 때문에 사용자가 바로 참고할 수 있는 상태다. 다만 이건 실사용 데이터가 쌓인 것이지
+   교육용으로 정리된 최소 예제는 아니다. 예제를 추가/수정할 때는 실제로 동작하는 최소 예제(위젯 1~2개 +
    자연어로 만든 동작)를 유지한다.
 
 3. **독립 실행(standalone) 내보내기** — 사용자가 빌더로 만든 툴은 빌더나 `claude` CLI 없이도 단독으로
    실행 가능해야 하며, 사용자가 원하는 위치에 파일로 저장할 수 있어야 한다. 이미 `exporter.py`
-   (`generate_source`/`export_to_file`)와 `palette_window.py`의 "저장" 버튼(`CanvasWindow.export_dialog`
-   호출)으로 구현되어 있다 (`QFileDialog`로 폴더/파일명 선택). 내보낸 `.py`는 PySide6만 있으면
-   `./venv/bin/python 파일.py`로 실행된다 — 이 성질을 깨는 변경(빌더 전용 모듈 임포트, `claude` CLI
-   의존 코드 포함 등)은 피한다.
+   (`generate_source`/`export_to_file`)와 `palette_window.py`의 "실행 py 저장" 버튼
+   (`CanvasWindow.export_dialog` 호출)으로 구현되어 있다 (`QFileDialog.getSaveFileName`으로 저장 위치·
+   파일명 선택). 내보낸 `.py`는 PySide6만 있으면 `venv\Scripts\python.exe 파일.py`로 실행된다 — 이
+   성질을 깨는 변경(빌더 전용 모듈 임포트, `claude` CLI 의존 코드 포함 등)은 피한다.
 
 4. **예제를 화면에 노출** — 프로그램(`main.py`)을 실행하면 사용자가 참고할 수 있는 예제가 화면에 보여야
-   한다. 현재는 미구현 상태다 (실행 시 빈 캔버스 + 팔레트만 뜸). 이 부분을 구현할 때는 캔버스 창에 예제
-   위젯/동작을 미리 배치해 보여주거나, 별도의 "예제 보기" 진입점을 추가하는 등의 방식을 검토한다.
+   한다. 현재는 `builder_state.json` 자동 복원(`CanvasTabs.__init__`)으로 이전에 저장된 탭 구성이
+   그대로 뜨는 방식으로 사실상 충족되고 있다 (빈 캔버스가 아님). 다만 이 상태는 사용자의 실사용
+   데이터이지 처음 쓰는 사람을 위해 큐레이션된 예제는 아니다 — 별도의 "예제 보기" 진입점이나 최초
+   실행 시 전용 예제 탭을 추가하는 방식은 여전히 검토 대상이다.
 
 ## 실행 방법
 
-```bash
-cd /home/ryuj/Ryu/ai-gui-builder-app
-./venv/bin/python main.py
+```powershell
+cd C:\repository\ai-gui-builder-app
+venv\Scripts\pythonw.exe main.py
 ```
 
-시스템 파이썬에는 PySide6가 없으므로 반드시 `./venv/bin/python`을 사용한다.
+시스템 파이썬에는 PySide6가 없으므로 반드시 이 venv를 사용한다. `python.exe`(콘솔 서브시스템)로 실행하면
+"python.exe"라는 제목의 불필요한 콘솔 창이 캔버스/팔레트 창과 함께 하나 더 뜨므로, 반드시 windowless
+버전인 `pythonw.exe`를 사용한다.
 
 ## 파일 구성
 
@@ -66,12 +72,13 @@ cd /home/ryuj/Ryu/ai-gui-builder-app
 | `ai_client.py` | `claude` CLI 호출해 동작 코드 생성 (허용 함수 화이트리스트 프롬프트) |
 | `code_binder.py` | 생성 코드를 제한된 네임스페이스에서 실행, 위젯 시그널에 바인딩 |
 | `exporter.py` | 캔버스 상태를 독립 실행 가능한 `.py` 소스로 직렬화 |
-| `alarm_widget.py` | "알람 시계" 위젯 (캘린더/시간 선택, 남은 시간 표시, 아날로그 시계) |
-| `window_status_widget.py` | "윈도우 현황" 위젯 (Windows 버전/CPU/메모리/디스크/휴지통, `ctypes`만 사용) |
+| `alarm_widget.py` | "알람 시계" 위젯 (캘린더/시간 선택, 남은 시간 표시, 아날로그 시계, 자연어 알람 등록(`claude` CLI 호출), `alarm_state.json` 저장/복원) |
+| `window_status_widget.py` | "윈도우 현황" 위젯 (Windows 버전/CPU/메모리/디스크/휴지통, `ctypes`+`winreg`+`subprocess` 사용, 추가 pip 패키지 없음) |
 | `git_widget.py` | "git" 위젯 (local/remote 비교·stash 6쌍, local drive 검색, 전체 status check. `git` CLI 필요) |
 | `theme.py` | 빌더 창(캔버스/팔레트)에 적용하는 앱 전역 QSS. `main.py`에서 `QApplication.setStyleSheet`로 적용. standalone 내보내기에도 항상 함께 포함됨 |
 | `tab_bar.py` | 탭바 구현 (`ColorTabBar`: 둥근 모서리, 탭별 색깔, 선택된 탭 볼드). 빌더/standalone 양쪽에서 같은 소스 파일 그대로 사용 |
 | `md_files/` | 문서(`how_to_use.md`, `tool_requirement.md`) 모음 |
-| `standalone/` | standalone 내보내기 결과물들을 날짜별 하위 폴더로 정리해 모아두는 곳 (예: `standalone/2026_07_26/app.py`) |
+| `executable_py/` | "실행 py 저장" 버튼을 누르면 저장 다이얼로그가 기본으로 여기서 시작한다. 내보낸 `.py` 결과물들을 날짜별 하위 폴더로 정리해 모아두는 곳 (예: `executable_py/2026_07_26/app.py`) |
+| `standalone/` | "standalone 실행 파일 저장"(.exe) 버튼을 누르면 저장 다이얼로그가 기본으로 여기서 시작한다 |
 
 자세한 내용(생성 코드가 쓸 수 있는 함수, 위젯 간 참조 방법 등)은 `md_files/how_to_use.md`를 참고한다.

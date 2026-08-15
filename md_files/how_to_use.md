@@ -4,45 +4,20 @@
 **자연어로 설명하면 로컬에 설치된 Claude Code(`claude` CLI)가 그 동작을 구현하는 코드를 생성**하고,
 그 코드가 **빌더 화면에서 바로 실행 가능한 상태로 위젯에 연결**된다.
 
-## 0. 처음 사용하는 사람을 위한 설치 가이드 (Linux / Windows)
+## 0. 처음 사용하는 사람을 위한 설치 가이드 (Windows)
 
-이 프로그램을 한 번도 안 써본 사람이 자기 컴퓨터에 처음 준비하는 절차다. 공통으로 필요한 것:
+이 프로젝트는 처음에는 Linux에서 시작했지만 현재는 Windows에서 실행하며 앞으로도 Windows에서만
+작업한다. 이 프로그램을 한 번도 안 써본 사람이 자기 컴퓨터에 처음 준비하는 절차다. 공통으로 필요한 것:
 
 - **Python 3.9 이상** (PySide6가 요구하는 최소 버전대)
 - **Claude Code(`claude` CLI)** — 위젯에 자연어로 동작을 만들어 붙이는 기능(동작 설정)에 필요.
   단순히 빌더를 켜서 화면만 구성하는 것은 `claude` CLI 없이도 되지만, "동작 설정"을 쓰려면 반드시 있어야
   하고 로그인도 되어 있어야 한다. 설치 후 최초 한 번 로그인이 필요하다.
-  ```bash
+  ```powershell
   npm install -g @anthropic-ai/claude-code
   claude login
   ```
   (Node.js/npm이 없다면 먼저 설치해야 한다.)
-
-### Linux에서 처음 설치하기
-
-1. 프로젝트 폴더를 원하는 위치로 받는다 (예: `git clone` 또는 압축 해제).
-2. 터미널에서 그 폴더로 이동한다.
-   ```bash
-   cd /경로/ai-gui-builder-app
-   ```
-3. 가상환경(venv)을 새로 만든다.
-   ```bash
-   python3 -m venv venv
-   ```
-   - 만약 `The virtual environment was not created successfully` 같은 오류가 나면 `python3-venv`
-     패키지가 없는 것이다 (Debian/Ubuntu 계열): `sudo apt install python3-venv` 로 설치 후 다시 시도.
-4. venv 안에 필요한 패키지를 설치한다.
-   ```bash
-   ./venv/bin/pip install -r requirements.txt
-   ```
-   - `error: externally-managed-environment` 오류는 venv 밖(시스템 파이썬)에 직접 설치하려 할 때만
-     발생한다. 반드시 `./venv/bin/pip`를 써야 하며, 시스템 `pip3 install`은 사용하지 않는다.
-5. 빌더를 실행한다.
-   ```bash
-   ./venv/bin/python main.py
-   ```
-6. (선택) 자연어로 동작을 만들고 싶다면, 위의 Claude Code 설치·로그인이 되어 있어야 한다. `claude`가
-   PATH에 없으면 실행 시 안내 팝업이 뜬다.
 
 ### Windows에서 처음 설치하기
 
@@ -63,8 +38,9 @@
    ```
 6. 빌더를 실행한다.
    ```powershell
-   .\venv\Scripts\python main.py
+   .\venv\Scripts\pythonw main.py
    ```
+   (`python`이 아니라 `pythonw`를 써야 "python.exe"라는 제목의 불필요한 콘솔 창이 안 뜬다.)
    - PowerShell에서 `venv\Scripts\Activate.ps1`로 가상환경을 "활성화"해서 쓰고 싶다면, 스크립트 실행이
      막혀 있을 수 있다 (`이 시스템에서 스크립트를 실행할 수 없으므로...` 오류). 그럴 땐 관리자 권한
      PowerShell에서 한 번만 아래를 실행:
@@ -83,13 +59,14 @@
 
 ## 1. 빌더(위젯 만드는 도구) 실행시키는 방법
 
-```bash
-cd /home/ryuj/Ryu/ai-gui-builder-app
-./venv/bin/python main.py
+```powershell
+cd C:\repository\ai-gui-builder-app
+venv\Scripts\pythonw.exe main.py
 ```
 
-시스템 파이썬(`python3`)에는 PySide6가 없으므로 반드시 이 프로젝트 전용 가상환경인
-`./venv/bin/python`으로 실행해야 한다.
+시스템 파이썬에는 PySide6가 없으므로 반드시 이 프로젝트 전용 가상환경으로 실행해야 한다. 이때
+`python.exe`가 아니라 `pythonw.exe`(windowless 버전)를 써야 한다 — `python.exe`로 실행하면 "python.exe"
+라는 제목의 불필요한 콘솔 창이 캔버스/팔레트 창과 함께 하나 더 뜬다.
 
 실행하면 두 창이 뜬다:
 - **나만의 tool** (왼쪽) — 30cm×20cm 크기, 탭으로 여러 화면 구성 가능. 완성될 앱이 실제로 살아있는 화면.
@@ -117,7 +94,10 @@ cd /home/ryuj/Ryu/ai-gui-builder-app
      라디오 버튼은 각각 자기 자신만의 독립된 그룹으로 시작하고, 우클릭 메뉴의 **"옵션 추가"**로 만든
      라디오 버튼만 원본과 같은 그룹(서로 배타적)이 된다. 예: "성별"(남/여) 그룹과 "크기"(소/중/대)
      그룹을 같은 화면에 놓아도 서로 간섭하지 않는다. 각 그룹의 **첫 번째로 만들어진 라디오 버튼이
-     기본으로 선택된 상태**로 시작한다(그룹이 빈 상태로 시작하지 않도록).
+     기본으로 선택된 상태**로 시작한다(그룹이 빈 상태로 시작하지 않도록). 그 뒤에 사용자가 캔버스에서
+     다른 옵션을 직접 선택하면, 그 선택 상태가 "틀 저장"/"실행 py 저장"/"standalone 실행 파일 저장"
+     모두에 그대로 반영되어 저장된다 (앱을 재시작하거나 내보낸 앱을 실행해도 첫 옵션으로 되돌아가지
+     않음).
 2. 캔버스에 놓인 위젯을 **우클릭**하면 메뉴가 뜬다:
    - 맨 위에 **"ID: <위젯id>"**가 항상 표시됨 (클릭은 안 되는 안내용) — 다른 위젯의 "동작 설정"에서
      이 위젯을 `self.<id>`로 참조할 때 이 id를 그대로 쓰면 됨
@@ -169,7 +149,7 @@ cd /home/ryuj/Ryu/ai-gui-builder-app
 - 알람 시간이 되면 **가로 20cm × 세로 20cm 정사각형 팝업 창**이 뜨고, 창 제목과 본문 모두에 알람
   등록 시 입력한(또는 자연어에서 자동으로 만들어진) 메시지가 표시됨. 일회성 알람은 울린 뒤 목록에서
   사라지고, 주기적 알람은 다음 반복 요일로 자동으로 넘어감 (끝 날짜가 지나면 더 이상 표시 안 됨)
-- 패널 기본 크기 840×640 (처음 크기 대비 2배)
+- 패널 기본 크기 1000×640
 
 **알람 저장**: 아직 울리지 않은(미래의) 알람은 알람을 추가/삭제/켜기·끄기/발동할 때마다 자동으로
 `alarm_state.json`(빌더 폴더 기준)에 저장되고, 앱을 껐다 다시 켜면 그대로 복원된다. 이미 울린
@@ -256,15 +236,16 @@ cd /home/ryuj/Ryu/ai-gui-builder-app
 
 두 가지 방식이 있다.
 
-**"실행 py 저장"** 버튼 (예전 "standalone 저장") — 폴더 선택 + 파일명 입력(`.py`) → 저장. 나온 `.py`
+**"실행 py 저장"** 버튼 (예전 "standalone 저장") — 저장 창이 기본으로 `executable_py/` 디렉토리에서
+열리며, 원하면 다른 위치로 바꿔서 저장해도 된다 → 폴더 선택 + 파일명 입력(`.py`) → 저장. 나온 `.py`
 파일은 PySide6(+markdownify/beautifulsoup4)가 설치된 파이썬으로 실행해야 한다 (아래 6-2 참고).
 탭 여러 개로 만든 내용, 각 위젯의 텍스트/색깔/크기/폰트/동작이 전부 그대로 내보내진다. 탭바 모양도
 빌더와 완전히 동일하다 — 탭 위쪽 모서리가 둥글고, 색깔을 지정한 탭은 그 색으로 칠해지며, 선택된
 탭의 제목만 볼드로 표시된다 (`tab_bar.py`의 `ColorTabBar`를 그대로 내보내서 씀). 앱 전체 테마
 (`theme.py`)도 함께 내보내져서 버튼/입력창 등 전반적인 느낌도 빌더와 동일하다.
 
-**"standalone 실행 파일 저장"** 버튼 — 저장 창이 뜨고(디폴트 파일명 `ai_tools.exe`), 위치와 이름을
-고르면 그 자리에서 바로 `.py`를 생성한 뒤 PyInstaller(`--onefile --windowed`)로 진짜 단일 `.exe`
+**"standalone 실행 파일 저장"** 버튼 — 저장 창이 기본으로 `standalone/` 디렉토리에서 열리며(디폴트
+파일명 `ai_tools.exe`), 위치와 이름을 고르면 그 자리에서 바로 `.py`를 생성한 뒤 PyInstaller(`--onefile --windowed`)로 진짜 단일 `.exe`
 파일을 빌드해서 그 경로에 저장한다. **파이썬도 이 빌더도 없는 컴퓨터에서 그냥 실행 파일을 더블클릭해서
 바로 쓸 수 있다** (대신 PySide6 전체를 파일 안에 담기 때문에 exe 하나가 대략 50MB 안팎). 빌드는
 1~2분 정도 걸리므로 별도 스레드에서 실행되며, 그동안 버튼이 "빌드 중..."으로 바뀌고 비활성화된다.
@@ -276,8 +257,8 @@ cd /home/ryuj/Ryu/ai-gui-builder-app
 바꾼 값은 `.py` 방식이면 그 스크립트 파일과 같은 폴더의 `git_panel_state.json`/`alarm_state.json`에,
 `.exe` 방식이면 그 실행 파일과 같은 폴더에 각각 저장되어 다음 실행 때도 유지된다.
 
-**"실행 py 저장"**으로 내보낼 때는 `standalone/` 디렉토리 밑에 날짜(+번호)별 하위 폴더를 만들어
-저장하는 것이 이 프로젝트의 정리 방식이다 (예: `standalone/2026_08_09_#2/app.py`). 프로젝트 루트가
+**"실행 py 저장"**으로 내보낼 때는 `executable_py/` 디렉토리 밑에 날짜(+번호)별 하위 폴더를 만들어
+저장하는 것이 이 프로젝트의 정리 방식이다 (예: `executable_py/2026_08_09_#2/app.py`). 프로젝트 루트가
 지저분해지지 않도록 새로 내보낼 때도 이 규칙을 따른다 (`.exe`는 용량이 커서 이 규칙과 무관하게
 git에 커밋하지 않는다).
 
@@ -285,17 +266,17 @@ git에 커밋하지 않는다).
 
 **이 프로젝트의 venv를 그대로 쓰는 경우** (같은 컴퓨터에서 바로 실행할 때 가장 간단):
 
-```bash
-/home/ryuj/Ryu/ai-gui-builder-app/venv/bin/python 내보낸파일.py
+```powershell
+C:\repository\ai-gui-builder-app\venv\Scripts\python.exe 내보낸파일.py
 ```
 
 **완전히 독립된 환경에서 실행하려는 경우** (다른 컴퓨터로 옮기거나 이 프로젝트와 분리해서 쓸 때):
 
-```bash
+```powershell
 cd 내보낸파일이_있는_폴더
-python3 -m venv venv
-./venv/bin/pip install PySide6 markdownify beautifulsoup4
-./venv/bin/python 내보낸파일.py
+py -m venv venv
+.\venv\Scripts\pip install PySide6 markdownify beautifulsoup4
+.\venv\Scripts\python 내보낸파일.py
 ```
 
 내보낸 `.py` 파일은 빌더나 `claude` CLI 없이 PySide6만 있으면 실행된다.
@@ -350,20 +331,24 @@ LLM이 생성한 코드는 클릭 한 번에 확인 없이 바로 실행되기 �
 | `ai_client.py` | `claude` CLI를 서브프로세스로 호출해 `def on_event(self): ...` 코드 생성. 시스템 프롬프트로 허용 함수/제약 명시 |
 | `code_binder.py` | 생성 코드를 제한된 네임스페이스에서 `exec`, 위젯 시그널에 바인딩. `open_url`/`read_file`/`write_file`/`delete_file` 정의 |
 | `exporter.py` | 캔버스 상태(여러 탭 포함)를 독립 실행 가능한 `.py` 소스로 직렬화 (`generate_source`/`export_to_file`), PyInstaller로 단일 `.exe` 빌드 (`build_exe`) |
-| `alarm_widget.py` | "알람 시계" 위젯 구현 (`AlarmClockPanel`, `AnalogClock`, 날짜/시간 선택 다이얼로그들) |
-| `window_status_widget.py` | "윈도우 현황" 위젯 구현 (`WindowStatusPanel`). Windows 버전/CPU/메모리/디스크/휴지통을 `ctypes`만으로 조회 |
+| `alarm_widget.py` | "알람 시계" 위젯 구현 (`AlarmClockPanel`, `AnalogClock`, 날짜/시간 선택 다이얼로그들, 자연어 알람 등록) |
+| `window_status_widget.py` | "윈도우 현황" 위젯 구현 (`WindowStatusPanel`). Windows 버전/CPU/메모리/디스크/휴지통을 `ctypes`(+`winreg`/`subprocess`)로 조회, 추가 pip 패키지 불필요 |
 | `git_widget.py` | "git" 위젯 구현 (`GitPanel`). 드라이브 전체 git 저장소 검색 + local/remote 비교·stash (`git` CLI 필요) |
 | `theme.py` | 빌더 창(캔버스/팔레트)에 적용하는 앱 전역 QSS. standalone 내보내기에도 항상 함께 포함됨 |
 | `tab_bar.py` | 탭바 구현 (`ColorTabBar`: 둥근 모서리, 탭별 색깔, 선택된 탭 볼드). 빌더/standalone 양쪽에서 같은 소스 파일 그대로 사용 |
 | `builder_state.json` | 빌더 자체 상태(탭/위젯 구성) 저장 파일. 실행 시 자동 로드 |
+| `alarm_state.json` | 아직 울리지 않은 알람 목록 저장 파일 (빌더/내보낸 앱 각각 자기 폴더 기준으로 별도 보관) |
+| `git_panel_state.json` | git 위젯의 local/remote 6쌍 값 저장 파일 (빌더/내보낸 앱 각각 자기 폴더 기준으로 별도 보관) |
 | `md_files/` | 문서 모음 (`how_to_use.md`, `tool_requirement.md`) |
-| `standalone/` | standalone 내보내기 결과물을 날짜별 하위 폴더(`2026_08_09_#2` 등)로 정리해 모아두는 곳 |
-| `venv/` | PySide6가 설치된 가상환경 (`./venv/bin/python`으로 실행) |
+| `executable_py/` | "실행 py 저장" 버튼을 누르면 저장 다이얼로그가 기본으로 여기서 시작한다. 내보낸 `.py` 결과물을 날짜별 하위 폴더(`2026_08_09_#2` 등)로 정리해 모아두는 곳 |
+| `standalone/` | "standalone 실행 파일 저장"(.exe) 버튼을 누르면 저장 다이얼로그가 기본으로 여기서 시작한다 |
+| `venv/` | PySide6가 설치된 가상환경 (`venv\Scripts\python.exe`로 실행) |
 
 ## 10. 알아두면 좋은 것들
 
 - **venv**: 이 프로젝트 전용 파이썬 패키지 설치 공간. 시스템 파이썬에는 PySide6가 없으므로 반드시
-  `./venv/bin/python`으로 실행해야 한다.
+  `venv\Scripts\pythonw.exe`로 실행해야 한다 (`python.exe`로 실행하면 "python.exe"라는 제목의
+  불필요한 콘솔 창이 하나 더 뜸).
 - 위젯 id는 탭(캔버스 페이지)마다 독립적으로 순차 증가하는 카운터로 부여된다 (`button_1`, `button_2`, ...).
   위젯을 삭제해도 카운터는 줄어들지 않는다 (id 재사용 안 함).
 - 디렉토리 선택창/실행 py 저장창/exe 저장창은 Windows 네이티브 다이얼로그를 그대로 사용한다 (창 아이콘이

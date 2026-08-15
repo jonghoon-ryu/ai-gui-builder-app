@@ -35,7 +35,10 @@ from exporter import build_exe, export_to_file
 from palette_window import WIDGET_KIND_MIME
 from tab_bar import ColorTabBar
 
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "builder_state.json")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(BASE_DIR, "builder_state.json")
+EXECUTABLE_PY_DIR = os.path.join(BASE_DIR, "executable_py")
+STANDALONE_DIR = os.path.join(BASE_DIR, "standalone")
 
 # Module-level (not per-tab) so copy/paste also works across tabs.
 _CLIPBOARD = []
@@ -81,6 +84,9 @@ def _save_state(tabs_widget, window_size=None):
                         "font_size": entry.get("font_size"),
                         "group": entry.get("group"),
                         "no_border": entry.get("no_border", False),
+                        "checked": (
+                            entry["widget"].isChecked() if entry["kind"] == "radiobutton" else None
+                        ),
                     }
                     for widget_id, entry in tabs_widget.widget(i).entries.items()
                 ],
@@ -329,6 +335,7 @@ class CanvasPage(QWidget):
                     "font_size": entry.get("font_size"),
                     "group": entry.get("group"),
                     "no_border": entry.get("no_border", False),
+                    "checked": (widget.isChecked() if entry["kind"] == "radiobutton" else None),
                 }
             )
         _CLIPBOARD = clipboard
@@ -357,6 +364,7 @@ class CanvasPage(QWidget):
                 data.get("font_size"),
                 data.get("group"),
                 data.get("no_border", False),
+                data.get("checked"),
             )
             pasted_ids.add(widget_id)
 
@@ -388,7 +396,7 @@ class CanvasPage(QWidget):
     def _create_widget(
         self, kind, widget_id, x, y, instruction="", code="", text=None, color=None,
         width=None, height=None, font_family=None, font_size=None, group=None,
-        no_border=False,
+        no_border=False, checked=None,
     ):
         widget = WIDGET_FACTORIES[kind](self)
         widget.setToolTip(widget_id)
@@ -407,9 +415,12 @@ class CanvasPage(QWidget):
             widget.setAutoExclusive(False)
             button_group = self._radio_groups.setdefault(group, QButtonGroup(self))
             button_group.addButton(widget)
-            if len(button_group.buttons()) == 1:
-                # First member of a (new or freshly-restored) group - make
-                # it the default selection so the group never starts empty.
+            if checked is not None:
+                # Explicit saved/copied selection state takes precedence.
+                widget.setChecked(checked)
+            elif len(button_group.buttons()) == 1:
+                # First member of a brand-new group - make it the default
+                # selection so the group never starts empty.
                 widget.setChecked(True)
 
         setattr(self, widget_id, widget)
@@ -463,7 +474,7 @@ class CanvasPage(QWidget):
     def restore_widget(
         self, kind, widget_id, x, y, instruction, code, text=None, color=None,
         width=None, height=None, font_family=None, font_size=None, group=None,
-        no_border=False,
+        no_border=False, checked=None,
     ):
         """Recreates a widget saved by a previous session, keeping the id
         counter ahead of it so newly dropped widgets don't collide."""
@@ -472,7 +483,7 @@ class CanvasPage(QWidget):
             self._counters[kind] = max(self._counters.get(kind, 0), int(suffix))
         self._create_widget(
             kind, widget_id, x, y, instruction, code, text, color, width, height,
-            font_family, font_size, group, no_border,
+            font_family, font_size, group, no_border, checked,
         )
 
     _DRAG_THRESHOLD = 4
@@ -804,6 +815,7 @@ class CanvasTabs(QTabWidget):
                     w.get("font_size"),
                     w.get("group"),
                     w.get("no_border", False),
+                    w.get("checked"),
                 )
 
             index = self.addTab(page, tab_data.get("title") or "tab")
@@ -939,10 +951,11 @@ class CanvasWindow(QMainWindow):
         super().closeEvent(event)
 
     def export_dialog(self):
+        os.makedirs(EXECUTABLE_PY_DIR, exist_ok=True)
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "독립 실행 앱으로 내보내기",
-            "app.py",
+            os.path.join(EXECUTABLE_PY_DIR, "app.py"),
             "Python Files (*.py)",
         )
         if not file_path:
@@ -972,10 +985,11 @@ class CanvasWindow(QMainWindow):
         )
 
     def export_exe_dialog(self, trigger_button=None):
+        os.makedirs(STANDALONE_DIR, exist_ok=True)
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "독립 실행 파일(.exe)로 내보내기",
-            "ai_tools.exe",
+            os.path.join(STANDALONE_DIR, "ai_tools.exe"),
             "Executable Files (*.exe)",
         )
         if not file_path:

@@ -391,7 +391,7 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
             init_lines.append(f'{page_var}.setStyleSheet("background-color: {tab["color"]};")')
         init_lines.append("")
 
-        radio_groups = {}  # group id -> [full_id, ...]
+        radio_groups = {}  # group id -> [(full_id, is_checked), ...]
 
         for widget_id, entry in entries.items():
             full_id = f"{prefix}{widget_id}"
@@ -399,7 +399,7 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
 
             if entry["kind"] == "radiobutton":
                 group = entry.get("group") or widget_id
-                radio_groups.setdefault(group, []).append(full_id)
+                radio_groups.setdefault(group, []).append((full_id, widget.isChecked()))
             pos = widget.pos()
             size = widget.size()
             # Read live text (whatever the user actually typed, including
@@ -434,12 +434,15 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
 
             init_lines.append("")
 
-        for group_index, full_ids in enumerate(radio_groups.values()):
+        for group_index, members in enumerate(radio_groups.values()):
             group_var = f"{prefix}radio_group_{group_index}"
             init_lines.append(f'{group_var} = QButtonGroup(self)')
-            for full_id in full_ids:
+            for full_id, _is_checked in members:
                 init_lines.append(f'{group_var}.addButton(self.{full_id})')
-            init_lines.append(f'self.{full_ids[0]}.setChecked(True)')
+            # Preserve whichever option was actually selected in the builder;
+            # fall back to the first member if none was (shouldn't happen).
+            checked_id = next((fid for fid, is_checked in members if is_checked), members[0][0])
+            init_lines.append(f'self.{checked_id}.setChecked(True)')
             init_lines.append("")
 
         title = tab["title"].replace('"', '\\"')

@@ -29,8 +29,11 @@ alarm)에 위젯을 채워서 쓰고 있다. 위젯 종류, 저장/복원, stand
 
 ```powershell
 cd C:\repository\ai-gui-builder-app
-venv\Scripts\python.exe main.py
+venv\Scripts\pythonw.exe main.py
 ```
+
+(`python.exe`로 실행하면 "python.exe" 제목의 불필요한 콘솔 창이 캔버스/팔레트 창과 함께 하나 더
+떠서, `pythonw.exe`로 바꿈 — 2026-08-15)
 
 ## 지원하는 위젯 (팔레트)
 
@@ -113,9 +116,55 @@ status check" 두 개의 독립된 버튼으로 정리됨).
 - **git** — git 위젯 1개 (local/remote 비교·stash 6쌍 + 전체 status check)
 - **wiki** — URL/디렉토리 입력창 + "가져와서 md로 변환" 버튼(웹 문서를 md로 저장, 이미지는 라디오
   버튼으로 자동/claude 분류 선택) + 라디오 버튼 2개
-- **쉬었다 합시다** — 노래 링크 버튼 3개(유튜브 열기) + 구분선
 - **윈도우 현황** — 윈도우 현황 위젯 1개 (Windows 버전/CPU/메모리/디스크/휴지통)
 - **alarm** — 알람 시계 위젯 1개
+- **쉬었다 합시다** — 노래 링크 버튼 3개(유튜브 열기) + 구분선
+
+## 저장/내보내기 완전성 감사 (2026-08-15)
+
+"틀 저장"(`palette_window.py`의 `_on_template_save_clicked` → `canvas_window.py`의 `save_template` →
+`_save_state`, 54~95번 줄), "실행 py 저장"(`export_dialog` → `exporter.py`의 `export_to_file`),
+"standalone 실행 파일 저장"(`export_exe_dialog` → `exporter.py`의 `build_exe`, 내부적으로 같은
+`generate_source`를 씀) 세 버튼이 캔버스 구성/화면 크기를 빠짐없이 저장하는지 정적 코드 대조로
+점검한 결과:
+
+- **윈도우 크기**: 세 버튼 모두 `self.width()`/`self.height()`를 그 자리에서 읽어 넘김 — 틀 저장은
+  `builder_state.json`의 `"window"`에, 실행 py/standalone exe 저장은 `generate_source`의
+  `self.resize(width, height)`에 반영됨. 문제 없음.
+- **탭별 제목/색깔/순서**: 세 버튼 모두 동일하게 `tabs_widget.tabText(i)` / `tab_bar.get_tab_color(i)`
+  / `range(count)` 순서로 캡처. 문제 없음.
+- **위젯별 kind/x/y/width/height/text/color/font_family/font_size/no_border**: 틀 저장은
+  `_save_state`가 이 필드들을 직접 골라 담고, 실행 py/exe 저장은 `entries` 딕셔너리를 통째로 넘겨서
+  `generate_source`가 `widget.pos()`/`widget.size()`/`widget.text()` 등 라이브 값을 그대로 읽음 —
+  양쪽 다 빠진 필드 없음.
+- **`instruction`(자연어 설명)**: 틀 저장(`builder_state.json`)에는 저장되지만 실행 py/exe 내보내기에는
+  포함 안 됨 — 의도된 설계다. 내보낸 앱은 이미 생성된 `code`만 실행하면 되고, `instruction`은 빌더에서
+  "동작 설정" 다이얼로그를 다시 열어 수정할 때만 필요한 편집용 메타데이터라 standalone 실행에는
+  불필요함.
+- **라디오 버튼 그룹 구성**: 그룹 멤버십(`entries[...]["group"]`)은 세 버튼 모두 정상 보존.
+- **라디오 버튼의 현재 선택 상태(checked)**: 감사 당시엔 셋 다 저장 안 되고 항상 첫 옵션으로
+  리셋됐음 — 2026-08-15에 수정 완료. `entries`를 만드는 `_create_widget`/`restore_widget`에
+  `checked` 매개변수를 추가해 명시적으로 전달된 값이 있으면 그대로 반영하고(없을 때만 새 그룹의
+  첫 멤버를 기본 선택), `_save_state`가 `entry["widget"].isChecked()`를 읽어
+  `builder_state.json`에 함께 저장, `exporter.py`의 `generate_source`도 그룹별로 첫 멤버를 무조건
+  체크하던 것을 그만두고 라이브 `widget.isChecked()`가 True인 멤버를 찾아 그걸 체크하도록 바꿈
+  (없으면 첫 멤버로 폴백). 복사/붙여넣기(`_copy_selected_widgets`/`_paste_clipboard`)에도 동일하게
+  `checked`를 실어 나르게 함. 헤드리스(`QT_QPA_PLATFORM=offscreen`) 스크립트로 저장→복원→내보내기
+  세 경로 모두 직접 검증함 (스크래치 파일, 커밋 안 됨).
+- **alarm/git 전용 합성 위젯의 런타임 상태**: `generate_source`가 `alarmclock` kind에서
+  `_serialize_alarms(widget._alarms)`로 미발동 알람 목록을, `gitpanel` kind에서
+  `[{"remote":..., "local":...} for box in widget.pair_boxes]`로 6쌍 값을 각각 내보내는 시점의
+  라이브 상태 그대로 `initial_alarms`/`initial_pairs`에 심는다 — how_to_use.md 6-1 섹션 설명과 코드가
+  정확히 일치함 (실행 py 저장/standalone exe 저장 둘 다, `generate_source`를 공유하므로 동일하게
+  적용됨). 문제 없음.
+- **틀 저장에 `alarm_state.json`/`git_panel_state.json`이 안 들어가는 것**: 버그 아님, 의도된 설계.
+  두 파일은 각자 알람 추가/삭제/켜기끄기·git 6쌍 입력 시점마다 자기 자신의 로직으로 이미 자동
+  저장되고 있어서 (how_to_use.md 3장/5장 참고) `builder_state.json`이 중복으로 떠안을 필요가 없음.
+
+**결론**: 라디오 버튼의 현재 선택 상태 1건을 제외하면 세 저장 버튼 모두 캔버스 구성과 화면 크기를
+빠짐없이 저장한다. 라디오 버튼 선택 상태 미보존은 코드 수정 없이 이번엔 기록만 해둔 상태 — 필요하면
+`entries`에 `checked` 필드를 추가해 `_save_state`/`generate_source`/복원 로직 세 군데를 함께 고치는
+후속 작업으로 진행할 수 있음.
 
 ## 알려진 미완/보류 항목
 
@@ -144,10 +193,15 @@ PyInstaller 서브프로세스 실행 → 결과 exe를 목적지로 복사). �
 venv 요구사항(PySide6+markdownify+beautifulsoup4)에는 영향 없음. 실제 빌드→복사→실행까지 전체
 파이프라인 테스트 완료 (48.2MB exe 생성, 실행 후 창 뜨는 것까지 확인).
 
-## standalone 내보내기 이력
+## 실행 py 내보내기 이력
 
-`standalone/` 밑에 날짜(+번호)별 폴더로 정리되어 있음: `2026_07_26`, `2026_08_09_#2`, `#3`, `#5`,
-`#6`, `#7`, `#8`. 앞으로도 이 규칙(`standalone/2026_MM_DD_#N/app.py`)을 따르면 됨.
+기존 `standalone/` 디렉토리는 `executable_py/`로 이름이 바뀌었다 (2026-08-15). "실행 py 저장" 결과물이
+`executable_py/` 밑에 날짜(+번호)별 폴더로 정리되어 있음: `2026_07_26`, `2026_08_09_#2`, `#3`, `#5`,
+`#6`, `#7`, `#8`, `2026_08_12_#1`, `#2`, `#3`, `#5`, `#6`, `#7`. 앞으로도 이 규칙
+(`executable_py/2026_MM_DD_#N/app.py`)을 따르면 됨. `standalone/`은 새로 빈 채로 만들어져
+"standalone 실행 파일 저장"(.exe) 결과물을 위한 용도로 쓰인다. 두 저장 버튼 모두 저장 다이얼로그가
+해당 디렉토리에서 기본으로 열리도록 코드에 연결되어 있음 (`canvas_window.py`의 `EXECUTABLE_PY_DIR`/
+`STANDALONE_DIR`, `export_dialog`/`export_exe_dialog`, 2026-08-15).
 
 ## 파일 구성 요약
 
@@ -156,4 +210,5 @@ venv 요구사항(PySide6+markdownify+beautifulsoup4)에는 영향 없음. 실�
 `code_binder.py`(화이트리스트 함수 + 안전한 exec) · `exporter.py`(standalone 내보내기) ·
 `alarm_widget.py`(알람 시계) · `window_status_widget.py`(윈도우 현황) · `git_widget.py`(git) ·
 `tab_bar.py`(탭바) · `theme.py`(빌더 전역 QSS) ·
-`builder_state.json`(자동 저장되는 현재 작업 상태) · `md_files/`(문서) · `standalone/`(내보내기 결과물).
+`builder_state.json`(자동 저장되는 현재 작업 상태) · `md_files/`(문서) ·
+`executable_py/`("실행 py 저장" 결과물) · `standalone/`(비어 있음, 다른 내보내기용으로 이름 비워둠).
