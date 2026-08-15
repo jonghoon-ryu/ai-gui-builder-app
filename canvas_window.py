@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from alarm_widget import AlarmClockPanel
 from git_widget import GitPanel
+from gvf_widget import FpgaAcquisitionPanel, FpgaLoadingPanel, GvfPanel
 from window_status_widget import WindowStatusPanel
 from behavior_dialog import BehaviorDialog
 from code_binder import SIGNAL_BY_KIND, HandlerCompileError, bind_handler, compile_handler
@@ -203,6 +204,9 @@ LINE_DEFAULT_SIZE = {
     "alarmclock": (1000, 640),
     "windowstatus": (760, 400),
     "gitpanel": (800, 630),
+    "gvfpanel": (460, 200),
+    "fpgaacquisition": (360, 250),
+    "fpgaloading": (630, 120),
 }
 URL_PLACEHOLDER = "URL 입력 (https://...)"
 DIR_PLACEHOLDER = "디렉토리 경로 입력"
@@ -219,6 +223,9 @@ WIDGET_FACTORIES = {
     "alarmclock": lambda parent: AlarmClockPanel(parent),
     "windowstatus": lambda parent: WindowStatusPanel(parent),
     "gitpanel": lambda parent: GitPanel(parent),
+    "gvfpanel": lambda parent: GvfPanel(parent),
+    "fpgaacquisition": lambda parent: FpgaAcquisitionPanel(parent),
+    "fpgaloading": lambda parent: FpgaLoadingPanel(parent),
 }
 
 # Text-box-flavored kinds that share lineedit's behavior (font menu, etc.)

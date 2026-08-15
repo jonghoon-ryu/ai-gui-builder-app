@@ -18,6 +18,9 @@ _WINDOW_STATUS_WIDGET_SOURCE_PATH = os.path.join(
 _GIT_WIDGET_SOURCE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "git_widget.py"
 )
+_GVF_WIDGET_SOURCE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "gvf_widget.py"
+)
 _TAB_BAR_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tab_bar.py")
 _THEME_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "theme.py")
 
@@ -37,6 +40,11 @@ def _read_window_status_widget_source():
 
 def _read_git_widget_source():
     with open(_GIT_WIDGET_SOURCE_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def _read_gvf_widget_source():
+    with open(_GVF_WIDGET_SOURCE_PATH, "r", encoding="utf-8") as f:
         return f.read()
 
 
@@ -239,6 +247,9 @@ _DESCRIBABLE_KIND_LABELS = {{
     "AlarmClockPanel": "알람 시계",
     "WindowStatusPanel": "윈도우 현황판",
     "GitPanel": "git 비교 패널",
+    "GvfPanel": "FPGA 자원 현황판",
+    "FpgaAcquisitionPanel": "FPGA 자원 취득판",
+    "FpgaLoadingPanel": "FPGA loading판",
 }}
 
 _ENTRY_KIND_LABELS = {{
@@ -256,6 +267,9 @@ _PANEL_LABELS = {{
     "alarmclock": "알람 시계",
     "windowstatus": "윈도우 현황판",
     "gitpanel": "git 비교 패널",
+    "gvfpanel": "FPGA 자원 현황판",
+    "fpgaacquisition": "FPGA 자원 취득판",
+    "fpgaloading": "FPGA loading판",
 }}
 
 _PANEL_DESCRIPTIONS = {{
@@ -276,6 +290,26 @@ _PANEL_DESCRIPTIONS = {{
         "버튼을 누르면 커밋 안 된 변경 파일의 원본/현재 버전을 백업합니다. 'local drive 검색' 버튼은 "
         "C/D/E 드라이브를 훑어 git 저장소를 찾아 local 칸을 채우고, '전체 status check' 버튼은 "
         "remote/local이 둘 다 채워진 쌍을 한꺼번에 비교합니다."
+    ),
+    "gvfpanel": (
+        "FPGA 자원 현황을 보여주는 패널입니다 (현재는 레이아웃만 있는 뼈대 상태 - 표시창 3개(FPGA "
+        "번호 1/2/3)와 각각의 시작/종료 시간 표시 자리, '반납' 버튼만 있고, 실제 데이터 연결이나 "
+        "'반납' 버튼의 실제 동작은 아직 없습니다)."
+    ),
+    "fpgaacquisition": (
+        "FPGA 자원 취득 설정 패널입니다 (현재는 레이아웃만 있는 뼈대 상태 - '아이디' 문자열 입력, "
+        "'FPGA 획득 마지막 시도' 시간 입력, 'FPGA 취득 간격'(분 단위, 기본 120분, 조절 가능) 입력, "
+        "'max FPGA 취득'(최솟값 1, 기본 1, 조절 가능) 입력, '명령어 입력 디렉토리' 경로 입력(폴더 "
+        "아이콘으로 선택), 'FPGA 대기열 삭제' 버튼, 누르면 '동작중'으로 바뀌는 '시작' 버튼과 누르면 "
+        "시작 버튼을 '다시 시작'으로 바꾸는 '중지' 버튼만 있고, 실제로 그 간격마다 자동 획득을 "
+        "시도하거나 그 디렉토리에서 명령어를 실행하거나 대기열 삭제/시작/중지하는 로직은 아직 "
+        "없습니다)."
+    ),
+    "fpgaloading": (
+        "FPGA loading 설정 패널입니다 (현재는 레이아웃만 있는 뼈대 상태 - 드롭박스 3개(FPGA 버전 "
+        "고정 목록, 'FPGA 자원 현황' 패널의 'FPGA 번호' 표시창을 열 때마다 다시 읽어서 채우는 "
+        "드롭박스, 메모리 타입 고정 목록) + '시작' 버튼만 있고, 실제로 '시작' 버튼을 눌렀을 때 "
+        "무슨 일이 일어나는지는 아직 없습니다)."
     ),
 }}
 
@@ -404,6 +438,7 @@ def remove_from_startup(path):
 {alarm_widget_source}
 {window_status_widget_source}
 {git_widget_source}
+{gvf_widget_source}
 class {class_name}(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -474,6 +509,12 @@ def _create_lines(
         )
     elif kind == "windowstatus":
         lines.append(f'self.{widget_id} = WindowStatusPanel({parent_var})')
+    elif kind == "gvfpanel":
+        lines.append(f'self.{widget_id} = GvfPanel({parent_var})')
+    elif kind == "fpgaacquisition":
+        lines.append(f'self.{widget_id} = FpgaAcquisitionPanel({parent_var})')
+    elif kind == "fpgaloading":
+        lines.append(f'self.{widget_id} = FpgaLoadingPanel({parent_var})')
     elif kind == "gitpanel":
         # Seed the exported panel with whatever remote/local pairs exist in
         # the builder right now, instead of it always starting empty.
@@ -559,6 +600,11 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
     )
     uses_git_panel = any(
         entry["kind"] == "gitpanel" for tab in tabs for entry in tab["entries"].values()
+    )
+    uses_gvf_panel = any(
+        entry["kind"] in ("gvfpanel", "fpgaacquisition", "fpgaloading")
+        for tab in tabs
+        for entry in tab["entries"].values()
     )
 
     for tab_index, tab in enumerate(tabs):
@@ -658,6 +704,7 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
             _read_window_status_widget_source() if uses_window_status else ""
         ),
         git_widget_source=_read_git_widget_source() if uses_git_panel else "",
+        gvf_widget_source=_read_gvf_widget_source() if uses_gvf_panel else "",
     )
     if method_blocks:
         source += "\n" + "\n".join(method_blocks)

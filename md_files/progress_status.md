@@ -113,13 +113,27 @@ status check" 두 개의 독립된 버튼으로 정리됨).
 
 ## 현재 탭 구성 (실사용 중인 내용)
 
+- **gvf** — gvf 위젯 3개 (2026-08-15 추가, 레이아웃만 있는 뼈대 상태). 왼쪽 위 "FPGA 자원 현황"
+  그룹박스(`GvfPanel`) — 표시창 3개("FPGA #1/2/3", 너비 좁힘) + 각각 옆에 3자리 숫자 입력칸 + 옆에
+  테두리 없고 여백을 꽉 채운, 가로로 넓힌 시작/종료 시간 디지털 시계 자리 + 줄 맨 오른쪽에 1.5배
+  키운 "반납" 버튼. 오른쪽 위 "FPGA 자원 취득" 그룹박스(`FpgaAcquisitionPanel`, `GvfPanel`과 크기를
+  맞춤) — "아이디" 문자열 입력, "FPGA 획득 마지막 시도" 시간 입력(`QTimeEdit`), "FPGA 취득 간격"
+  분 단위 스핀박스(기본 120분), "max FPGA 취득" 스핀박스(기본 1, 최솟값 1), "명령어 입력 디렉토리"
+  경로 입력(git local과 동일한 폴더 선택 방식), "FPGA 대기열 삭제" 버튼, 맨 아래 시작/중지 버튼
+  한 쌍(시작을 누르면 "동작중", 이어서 중지를 누르면 "다시 시작"으로 시작 버튼 이름이 바뀜). 아래쪽
+  "FPGA loading" 그룹박스(`FpgaLoadingPanel`) — 라디오 버튼 열 3개를 세로로 쌓아서 넉넉한 간격으로
+  가로 나열(FPGA 버전 4개/FPGA 번호 3개("FPGA #1/2/3", 각각 옆에 3자리 숫자 입력칸이 하나씩 붙음)/
+  메모리 타입 4개) + 맨 오른쪽에 1.5배 키운 "시작" 버튼. **세 위젯 모두** 입력값이 바뀔 때마다
+  `appData/gvf_state.json`에 자동 저장되고(각자 다른 키를 써서 서로의 데이터를 안 덮어씀) 재시작 시
+  복원됨. 실제 데이터/시간 연결, 주기적 자동 획득, 명령어 실행, 시작/중지/대기열 삭제/loading "시작"
+  로직은 모두 다음에 이어서 함 (지금은 값 입력/저장/버튼 이름 토글만 동작)
 - **git** — git 위젯 1개 (local/remote 비교·stash 6쌍 + 전체 status check)
 - **wiki** — URL/디렉토리 입력창 + "가져와서 md로 변환" 버튼(웹 문서를 md로 저장, 이미지는 라디오
   버튼으로 자동/claude 분류 선택) + 라디오 버튼 2개
 - **윈도우 현황** — 윈도우 현황 위젯 1개 (Windows 버전/CPU/메모리/디스크/휴지통)
 - **alarm** — 알람 시계 위젯 1개
 - **설명** — 버튼 4개: "전체 앱 설명"/"각 탭에 대한 설명"(둘 다 클릭 시점에 실제 탭 구성을 읽어서
-  내용을 새로 만듦, `how_to_use.md` 6번 참고), "시작 프로그램 등록"/"시작 프로그램 삭제"(standalone
+  내용을 새로 만듦, `how_to_use.md` 7번 참고), "시작 프로그램 등록"/"시작 프로그램 삭제"(standalone
   파일을 Windows 로그인 시 자동 실행되도록 레지스트리 Run 키에 등록/제거). 2026-08-15 추가,
   "쉬었다 합시다" 탭을 대체함(노래/웹툰 버튼들은 제거)
 - **link** — 3개 카테고리(claude/opencode/C++)로 나뉜 링크 모음. 각 카테고리는 색 있는 헤더
@@ -539,8 +553,232 @@ subprocess 잠금으로 헤드리스 테스트해서 전부 통과 확인. stand
 동일 기능이 포함되어 있는지 생성된 소스에 `git clone`/`find_locking_processes`/`RmStartSession`
 문자열이 들어있고 `ast.parse`/`py_compile`이 통과하는 것으로 확인함.
 
+## gvf 탭 추가: "FPGA 자원 현황" 뼈대 (2026-08-15)
+
+사용자가 빌더에서 직접 새 탭을 만들고 "gvf"로 이름 붙인 뒤, 그 탭에 "오늘은 껍데기만" 만들어달라는
+요청으로 `gvf_widget.py`(`GvfPanel`)를 새로 추가함 — 기존 git/alarm/윈도우 현황 위젯과 같은 패턴
+(팔레트에 없는 전용 복합 위젯을 `WIDGET_FACTORIES`에 `kind` 하나로 등록해 그 탭에 직접 배치)을
+그대로 따름. 일반 팔레트 위젯(버튼/입력창 등)은 캔버스에 낱개로 놓이는 평면 모델이라 "제목 있는
+사각형 안에 여러 하위 위젯"처럼 중첩 구조를 표현할 수 없어서, git/alarm/윈도우현황과 마찬가지로
+전용 위젯 모듈로 구현하는 쪽을 택함.
+
+구성: 왼쪽 위 "FPGA 자원 현황" 제목의 `QGroupBox` 안에 표시창 3개(`_DisplayRow`)가 세로로 나열되고,
+각 표시창 오른쪽에 시작/종료 시간을 보여줄 테두리 없는 디지털 시계 스타일 표시(`_DigitalTimeBox`,
+검은 바탕+초록 모노스페이스 글씨)가 붙는다. 지금은 표시창에 "FPGA 번호 N", 시계에 "00:00:00" 고정값만
+있는 뼈대 상태 — 실제 자원 데이터를 채우거나 시간을 실시간으로 계산/갱신하는 로직은 다음에 이어서 구현.
+그룹박스 제목("gvf 자원 현황" → "FPGA 자원 현황")/표시창 라벨("표시창 N" → "FPGA 번호 N")/시계
+테두리 제거는 첫 구현 직후 사용자 피드백으로 바로 수정함 (테두리는 `border: none`만으로는 안 지워질
+가능성을 대비해 `setFrameShape(QFrame.Shape.NoFrame)` + `setLineWidth(0)`도 같이 명시).
+
+`canvas_window.py`(import, `WIDGET_FACTORIES["gvfpanel"]`, `LINE_DEFAULT_SIZE["gvfpanel"] = (340,
+200)`)와 `exporter.py`(라벨/설명 텍스트, 코드 생성 분기, 소스 임베딩 조건부 포함)에 git/alarm/
+윈도우현황과 동일한 자리마다 짝을 맞춰 추가해서 standalone 내보내기에서도 그대로 동작하도록 함.
+헤드리스로 다음을 확인: `GvfPanel` 단독 렌더링(표시창/시계 텍스트 정상), `canvas_window`의
+`WIDGET_FACTORIES`/`LINE_DEFAULT_SIZE` 등록 확인, `exporter.generate_source`가 만든 소스가
+`ast.parse`/`py_compile` 통과 + 실제로 그 소스를 실행해서 만든 standalone 앱에서 "gvf" 탭에
+`GvfPanel`이 표시창 3개와 함께 정상 생성되는 것, 그리고 실제 `builder_state.json`(gvf 탭에
+`gvfpanel_1` 엔트리 추가)을 그대로 복원한 캔버스 페이지를 렌더링해서 레이아웃(그룹박스 좌상단,
+표시창 3개 + 시계 3개)이 의도대로 나오는 것.
+
+## gvf 탭: "FPGA 자원 취득" 패널 + 시작/중지 버튼 추가 (2026-08-15)
+
+기존 `GvfPanel`(좌상단) 옆에 두 번째/세 번째 전용 위젯 `FpgaAcquisitionPanel`/`FpgaControlButtons`를
+같은 `gvf_widget.py`에 추가함. 사용자가 한 요청을 여러 번에 걸쳐 보내면서 필드 이름/기본값이
+중간에 바뀌었음 — 처음엔 "FPGA 획득 주기"(기본 5분) 하나만 있었다가, 이어진 요청으로 "FPGA 취득
+간격"(기본 120분)으로 이름/기본값이 바뀌고 "max FPGA 취득" 필드가 새로 추가됨. 최종 상태:
+
+`FpgaAcquisitionPanel` — "FPGA 자원 취득" 제목의 `QGroupBox` 안에 다섯 줄:
+- "FPGA 획득 마지막 시도" + `QTimeEdit`(기본값 = 위젯 생성 시점의 현재 시각, HH:mm:ss, 직접 조절
+  가능) — 이전의 `_DigitalTimeBox`(정적 표시 전용)와 달리 실제 입력 위젯을 요청받아서 `QLabel` 대신
+  `QTimeEdit`을 씀.
+- "FPGA 취득 간격" + `QSpinBox`(1~1440분 범위, 기본값 120분, " 분" 접미사, 조절 가능).
+- "max FPGA 취득" + `QSpinBox`(최솟값 1, 최댓값 999, 기본값 1, 조절 가능).
+- 디렉토리 입력창(placeholder "명령어 입력 디렉토리") — `git_widget.py`의 `_RepoPairBox.local_edit`과
+  똑같은 패턴(`QLineEdit` + 트레일링 `SP_DirIcon` 액션 + `QFileDialog.getExistingDirectory`)을
+  그대로 재사용.
+- 토글형 "자원 계속 사용" 버튼(`setCheckable(True)`) — 눌린 상태(`toggled` 시그널)에 따라 자기
+  글자가 "자원 계속 사용" ↔ "FPGA 계속 사용중"으로 바뀜.
+
+`FpgaControlButtons` — "FPGA 자원 취득" 사각형 오른쪽에 놓이는 시작/중지 버튼 한 쌍. 시작 버튼을
+누르면 자기 글자가 "동작중"으로 바뀌고, 중지 버튼을 누르면 (자기 글자는 그대로 "중지"인 채로)
+시작 버튼 글자가 "다시 시작"으로 바뀜 — 두 버튼이 서로 다른 상대방 상태를 갱신하는 단순 토글
+쌍으로 구현.
+
+`canvas_window.py`에 `kind="fpgaacquisition"`/`"fpgacontrol"`로 등록(`WIDGET_FACTORIES`,
+`LINE_DEFAULT_SIZE`는 각각 (360, 180)/(170, 36)), `exporter.py`에도 라벨/설명 텍스트/코드 생성
+분기를 짝 맞춰 추가하고 `uses_gvf_panel` 플래그를 `gvfpanel`/`fpgaacquisition`/`fpgacontrol` 중
+하나라도 쓰이면 `gvf_widget.py` 소스를 통째로 임베드하도록 바꿈(같은 파일에 세 클래스가 있으므로).
+세 위젯을 가로로 나란히 놓다 보니 기존 창 너비(821px)로는 좁아서, 실제 `builder_state.json`의
+`window.width`를 821 → 1000으로 늘리고(다른 탭들의 위젯은 전부 821 안에 들어가 있어서 창을
+넓히는 것만으로는 다른 탭에 영향 없음을 먼저 확인), gvf 탭에 `fpgaacq_1`(x=441, y=20, 360×180)과
+`fpgactrl_1`(x=811, y=20, 170×36) 엔트리를 추가/조정함. 헤드리스로 확인: `FpgaAcquisitionPanel`/
+`FpgaControlButtons` 단독 렌더링(입력값 기본값·조절·토글 동작 정상), `canvas_window`/`exporter`
+등록 확인, `exporter.generate_source`로 만든 소스가 `ast.parse`/`py_compile` 통과 + 실행해서 세
+패널이 모두 정상 생성되고 시작/중지·자원 계속 사용 버튼 클릭이 실제로 텍스트를 토글하는 것, 실제
+`builder_state.json` 복원 결과를 렌더링해서 세 사각형이 가로로 겹치지 않고 배치되는 것.
+
+## gvf 탭 정리 + appData 자동 저장 추가 (2026-08-15)
+
+이어진 요청들로 gvf 탭 레이아웃을 재정리함:
+- **시작/중지 버튼을 "FPGA 자원 취득" 사각형 안으로 이동**: 별도 위젯이던 `FpgaControlButtons`를
+  통째로 삭제하고, 그 버튼 두 개를 `FpgaAcquisitionPanel` 안의 한 줄(`control_row`)로 옮김.
+  `canvas_window.py`/`exporter.py`의 `fpgacontrol` kind 등록을 전부 되돌리고, 그만큼 필요 없어진
+  창 너비(1000 → 821)도 다시 줄임(다른 탭 위젯이 전부 821 안에 들어가는 것을 재확인 후 진행).
+- **"자원 계속 사용" 버튼 제거**: 요청으로 "FPGA 계속 사용" 이름으로 바꿨다가, 바로 다음 요청으로
+  버튼 자체(및 토글 핸들러)를 완전히 삭제함.
+- **"FPGA 대기열 삭제" 버튼 추가 후 위치 조정**: 처음엔 시작/중지 버튼 줄 아래(맨 끝)에 추가했다가,
+  요청으로 명령어 디렉토리 입력창 바로 아래·시작/중지 버튼 줄 바로 위로 옮김.
+- **"아이디" 입력창 추가**: `FpgaAcquisitionPanel` 맨 위에 문자열 입력창(`QLineEdit`) 한 줄을
+  새로 추가.
+- **`GvfPanel`의 표시창/시계 재구성**: "FPGA 번호 N" 표시창을 `setFixedWidth(90)`으로 좁히고, 그
+  오른쪽의 `_DigitalTimeBox`(시작/종료 시계) 오른쪽에 "반납" 버튼을 새로 추가.
+- **시계 테두리 재단순화**: 사용자가 실제 앱 스크린샷을 보내며 "테두리가 너무 두껍다"고 재차
+  지적함 — `border-width: 0; border-style: none; border-radius: 4px;`처럼 border-radius를 남겨둔
+  상태였는데, 작은 박스에서 둥근 모서리 자체가 두꺼운 테두리처럼 보일 수 있다고 판단해 아예
+  `border: none;`만 남기고 `border-radius`를 제거함(완전히 각진 사각형으로 단순화).
+
+**appData 자동 저장**: `gvf_widget.py`에 alarm/git 위젯과 같은 패턴(`_STATE_DIR`/`_APP_DATA_DIR`
+계산, `GVF_STATE_FILE = appData/gvf_state.json`, `_load_gvf_state`/`_save_gvf_state`)을 추가함.
+`FpgaAcquisitionPanel`의 "아이디"/"FPGA 획득 마지막 시도"/"FPGA 취득 간격"/"max FPGA 취득"/"명령어
+입력 디렉토리" 다섯 개 입력값을 생성 시점에 파일에서 복원하고, 이후 각 위젯의 변경 신호
+(`editingFinished`/`valueChanged`, 디렉토리는 폴더 선택 직후에도 명시적으로 저장 호출)에 맞춰
+자동으로 다시 저장함. alarm/git과 달리 이 상태 파일은 처음 만드는 것이라 레거시 마이그레이션
+로직은 필요 없었음. 헤드리스로 값을 바꾸고 재생성한 인스턴스가 그대로 복원되는 왕복을 확인했고,
+standalone 내보내기로 만든 앱도 빌더와 별도인 자기 폴더의 `appData/gvf_state.json`에 저장되는
+것을 실행까지 해서 확인함.
+
+## gvf 탭: "FPGA loading" 패널 추가 + 콤보박스 전역 스타일 개선 + 크기/여백 정리 (2026-08-15)
+
+**"FPGA loading" 패널 추가**: `gvf_widget.py`에 세 번째 전용 위젯 `FpgaLoadingPanel`을 추가해서
+gvf 탭 아래쪽에 배치함. "FPGA loading" 제목의 `QGroupBox` 안에 드롭박스 3개가 가로로 나란히 있고,
+그 아래 "시작" 버튼:
+- 첫 번째: 고정 목록("FPGA v18.0"/"FPGA v19.0"/"FPGA v24.0"/"FPGA v25.0").
+- 두 번째(`_FpgaNumberComboBox`): **다른 위젯(`GvfPanel`)의 상태를 동적으로 읽는 드롭박스** —
+  `showPopup()`을 오버라이드해서 열릴 때마다 `self.window().findChild(GvfPanel)`로 같은 창 안의
+  `GvfPanel`을 찾고, 그 `rows`의 `display_label` 텍스트("FPGA 번호 N")를 다시 읽어 채움(비어있는
+  표시창은 목록에서 빠짐). 전용 위젯끼리는 `canvas_window.py`가 자동으로 서로를 연결해주지 않으므로
+  (그건 "동작 설정" 자연어 코드가 `self.<id>`로 쓰는 방식에서만 됨), `self.window()` 기반 탐색으로
+  같은 창 안 어디에 있든 찾아내는 방식을 택함 — 어느 탭에 있든, 위젯 생성 순서에도 안 흔들림.
+- 세 번째: 고정 목록("TLC"/"QLC"/"SLC/QLC"/"TLC/QLC").
+`canvas_window.py`(`kind="fpgaloading"`, `LINE_DEFAULT_SIZE`)/`exporter.py`(라벨/설명/코드 생성
+분기, `uses_gvf_panel` 조건에 추가)에도 짝을 맞춰 등록함. 헤드리스로 두 `GvfPanel` 표시창 하나를
+비웠을 때 드롭박스 아이템이 실제로 2개로 줄어드는 것, standalone 내보내기 실행 결과에서도 동일하게
+동작하는 것을 확인함.
+
+**콤보박스 전역 스타일 개선**: "실제 상용 코드에서 쓰이는 것처럼 드롭박스 모양을 바꿔달라"는
+요청으로 `theme.py`의 `QComboBox` 스타일을 `QLineEdit`/`QTextEdit`와 공유하던 뭉뚱그린 규칙에서
+분리해 전용 블록으로 새로 만듦: hover/focus/disabled 상태, 오른쪽에 테두리로 구분된 드롭다운 버튼
+영역(하늘색 배경, hover 시 진하게), 팝업 목록(`QComboBox QAbstractItemView`)에 둥근 테두리·아이템
+패딩·앱 강조색(`#5b72e0`) 선택 표시를 추가함. `theme.py`는 항상 내보내기에 통째로 포함되는 파일이라
+(탭바와 마찬가지로 `uses_X` 플래그로 안 걸러짐) 이 변경 하나로 빌더와 standalone 양쪽, 그리고 gvf
+말고도 앱 전체의 모든 드롭박스에 한 번에 적용됨. 헤드리스로 콤보박스 자체와 팝업 목록 렌더링을
+각각 캡처해서 확인함.
+
+**"FPGA 자원 현황"/"FPGA 자원 취득" 크기 통일 + "FPGA loading" 여백 정리**: `GvfPanel`의
+`LINE_DEFAULT_SIZE`를 `FpgaAcquisitionPanel`과 동일한 (360, 250)으로 맞추고, 실제
+`builder_state.json`의 `gvfpanel_1` 크기도 그에 맞게 조정함. `FpgaLoadingPanel`의 내부 여백은
+기본값(레이아웃 마진 미지정)으로는 위쪽만 유독 넓었음(헤드리스 픽셀 측정: 왼쪽/오른쪽 10px, 위
+29px, 아래 16px) — `QGroupBox`가 제목 글자를 위해 위쪽에 항상 별도 공간을 추가로 예약하는 스타일
+특성 때문. `form.setContentsMargins(13, 0, 13, 10)`으로 위쪽 마진을 명시적으로 줄여 제목이 차지하는
+공간과 합쳐졌을 때 네 방향이 비슷하게 보이도록 맞춤(완전히 동일한 픽셀 값은 제목이 있는 그룹박스
+구조상 불가능 - 위쪽은 항상 제목 높이만큼 더 필요함).
+
+## "FPGA loading" 드롭박스 → 라디오 버튼 전환 + 시계 패딩/반납 버튼 크기 조정 (2026-08-15)
+
+**드롭박스 3개 → 라디오 버튼 열 3개**: 콤보박스 3개를 없애고 라디오 버튼으로 바꿔달라는 요청으로
+`FpgaLoadingPanel`을 다시 씀. 처음엔 라디오 버튼 11개(4+3+4)를 전부 한 줄로 나열했더니 헤드리스로
+측정한 `sizeHint`가 가로 1576px까지 벌어져서(각 라디오 버튼 사이 spacing이 계속 누적됨), 그룹별로
+세로로 쌓은 좁은 열 3개를 만들고 그 열들을 가로로 배치하는 방식으로 바꿔 552px까지 줄임 - 실사용
+가능한 폭으로 돌아옴. 최종 구성: 첫 번째 열(FPGA 버전 4개), 두 번째 열(FPGA 번호 - "FPGA #1"/"FPGA
+#2"/"FPGA #3"로 명명, 옆에 `QIntValidator(0, 999)` + `setMaxLength(3)`로 숫자 3자리까지만 받는
+입력칸), 세 번째 열(메모리 타입 4개), 맨 오른쪽에 "시작" 버튼(이전엔 별도 줄 맨 아래였는데 요청으로
+같은 줄 맨 오른쪽으로 이동). 이전 버전에 있던 "`GvfPanel`의 FPGA 번호 표시창을 열 때마다 다시
+읽어서 채우는" 동적 드롭박스(`_FpgaNumberComboBox`)는 라디오 버튼으로 바뀌면서 고정 라벨("FPGA
+#1/2/3")로 단순화되어 완전히 제거함.
+
+**시계 패딩/반납 버튼 크기**: "FPGA 자원 현황"의 시작/종료 디지털 시계 테두리가 여전히 두껍다는
+반복된 피드백 — 이전에 `border: none`/`border-radius` 제거까지 했는데도 재차 지적받고 나서야,
+"테두리"로 지칭한 게 실제 border 속성이 아니라 `_DigitalTimeBox` 내부의 넉넉한 padding(가로 10px/
+세로 6px)이 검은 배경과 초록 글씨 사이에 두꺼운 여백처럼 보였던 것이라고 재해석함. `layout.
+setContentsMargins(10, 6, 10, 6)` → `(6, 2, 6, 2)`, `spacing(2)` → `spacing(0)`으로 글자에 바짝
+붙는 크기로 줄임. 같은 요청 묶음에서 "반납" 버튼은 반대로 기본 크기(38×18)의 가로·세로 각각
+1.5배(57×27)로 키움 — `sizeHint()`를 애플리케이션 스타일시트가 적용된 뒤에 읽어야 정확하다는 점을
+standalone 내보내기 테스트 중 재확인함(스타일시트 적용 전에 읽으면 Qt 기본 크기가 나와서 배율 계산이
+어긋남 - 실제 내보낸 앱은 `app.setStyleSheet(...)`가 창 생성보다 먼저 실행되므로 문제 없음, 테스트
+스크립트에서 그 순서를 안 지켰을 때만 재현되는 착시였음).
+
+## gvf 탭: 라벨/레이아웃 세부 조정 + 전체 위젯 appData 저장 확대 (2026-08-15)
+
+**`GvfPanel`("FPGA 자원 현황")**: `_DisplayRow`의 표시창 라벨을 "FPGA 번호 N" → "FPGA #N"으로
+바꾸고, 그 오른쪽에 3자리 숫자 입력칸(`QIntValidator(0, 999)` + `setMaxLength(3)`, "FPGA loading"의
+숫자 입력칸과 같은 패턴)을 새로 추가함. `_DigitalTimeBox`는 `setMinimumWidth(210)`으로 가로를
+넓히고, 레이아웃 순서를 `[표시창][숫자입력][시계][stretch][반납 버튼]`로 바꿔서 "반납" 버튼이 줄
+맨 오른쪽 끝(진짜 여백을 두고 밀려난 위치)에 오도록 함 — 이전엔 시계 바로 뒤에 붙어 있고 stretch가
+그 뒤에 있어서 실제로는 오른쪽 끝이 아니었음.
+
+**`FpgaLoadingPanel`("FPGA loading")**: 내부 여백을 `GvfPanel`의 표시창 3개 사이 간격(10px)에
+맞춰 좌/우/아래를 10으로 통일(위쪽은 이전과 같이 0 - 그룹박스 제목이 이미 별도 공간을 차지하므로).
+라디오 버튼 열 3개 사이 간격을 24 → 40으로 늘림. "FPGA #1/#2/#3" 라디오 버튼 옆에 공유 입력칸
+하나만 있던 것을, 각 라디오 버튼마다 자기 전용 3자리 숫자 입력칸이 붙도록 바꿈(`number_value_edits`
+리스트로 관리). "시작" 버튼도 "반납" 버튼과 같은 방식(생성 시점 `sizeHint()` × 1.5)으로 키움.
+
+**appData 저장을 세 위젯 전부로 확대**: 지금까지는 `FpgaAcquisitionPanel`만
+`_save_gvf_state(dict)`로 파일 전체를 덮어써서 저장했는데, 이 방식은 `GvfPanel`/`FpgaLoadingPanel`도
+같은 파일에 저장하게 되면 서로의 데이터를 지워버리는 문제가 있었음. `_update_gvf_state(key, value)`
+헬퍼(파일을 읽고 → 그 키만 갱신 → 다시 씀)를 추가하고, 세 위젯이 각자 다른 최상위 키를 쓰도록
+정리함: `GvfPanel`은 `"display_numbers"`(숫자 입력칸 3개 값의 리스트), `FpgaAcquisitionPanel`은
+`"acquisition"`(기존 5개 필드를 감싼 dict로 스키마 변경 - 아직 실사용 데이터가 없어서 마이그레이션
+불필요), `FpgaLoadingPanel`은 `"loading"`(라디오 3그룹의 선택된 텍스트 + 숫자 입력칸 3개 값).
+헤드리스로 세 위젯을 각각 다른 값으로 바꾸고 저장 → 파일 내용에 세 키가 모두 온전히 남아있는지 →
+새 인스턴스 3개가 각자 정확히 복원되는지까지 왕복 확인했고, standalone 내보내기에도
+`_update_gvf_state`가 포함되어 `ast.parse`/`py_compile`이 통과하는 것을 확인함.
+
+## gvf 탭: 사각형 크기/여백 통일 + 시계 "테두리" 버그 근본 원인 수정 (2026-08-15)
+
+**"FPGA 자원 현황"/"FPGA 자원 취득" 사각형 크기·여백 통일**: 두 사각형을 정확히 같은 크기로,
+"FPGA 자원 취득" 오른쪽 여백을 "FPGA 자원 현황" 왼쪽 여백과 같게 맞춰달라는 요청으로 계산해보니
+반납 버튼 등 다른 요소는 그대로 두고 시계 폭만 줄이는 걸로는 820px 창 폭 안에서 물리적으로 불가능함을
+확인(자세한 계산은 이번 대화 기록 참고 - 헤드리스로 각 요소의 styled sizeHint를 직접 측정해서
+검증함). 사용자에게 트레이드오프를 확인받아(반납 버튼/여백도 같이 줄이는 쪽 선택) 시계 폭을
+420(기존 여유분 포함) → 156으로 우선 줄여 두 사각형을 395×245로 통일, 여백 10px로 맞춤.
+
+**시계 "테두리" 재발 - 진짜 원인 발견**: 위 조정 후에도 사용자가 "시계 테두리가 여전히 남아있다"를
+세 번째로 지적함 - 헤드리스 픽셀 검사(`grab()`)로는 문제를 못 찾았는데(그랩한 픽스맵 자체는
+border:none이 맞음), 실제 화면을 PowerShell(`System.Drawing` Bitmap + `CopyFromScreen`)으로
+스크린샷 찍어서 확대해보고서야 진짜 원인을 발견함: `theme.py`의 전역 규칙
+(`QMainWindow, QWidget { background-color: #f4f5f8; }`)이 `_DigitalTimeBox` **내부의 `QLabel`
+자식**(`start_label`/`end_label`)에도 적용되는데, 이 라벨들의 스타일시트가 `color`/`font-family`/
+`font-size`만 지정하고 `background-color`는 지정하지 않아서, 전역 회색 배경이 라벨 영역을 덮어버리고
+`_DigitalTimeBox` 자신의 진짜 배경(#101418)은 라벨 주위 여백(레이아웃 margin) 부분에서만 얇게
+비쳐 보였던 것 - 이게 사용자에게 "두꺼운 검정 테두리"로 보인 진짜 정체였음(GitPanel 상자 배경
+투명화 때 겪었던 것과 같은 종류의 "전역 QWidget 배경 상속" 버그, 이번엔 프레임이 아니라 프레임
+**내부의 자식 위젯**에서 발생). 라벨 스타일시트에 `background-color: transparent;`를 명시해서
+해결 - 스크린샷으로 실제로 회색 프레임이 사라진 것까지 눈으로 확인함.
+
+**추가 축소 + 최종 재배치**: 시계 텍스트의 이중 공백("시작  00:00:00") 제거, 내부 레이아웃 여백
+(6,2,6,2) → (4,2,4,2) 축소, `setMinimumWidth`에 매직넘버 대신 `layout.sizeHint().width()`를 그대로
+써서 텍스트가 바뀌어도 값이 낡지 않게 함 - 시계 실제 최소 폭이 140px까지 더 줄어듦. 이만큼 줄어든
+폭을 두 사각형(380×245)과 여백(10→20px) 쪽으로 재분배함. "FPGA loading"은 지난 세션에 라디오 그룹
+간격을 2배(80px)/시작 버튼을 3배로 키운 상태라 실제 필요 최소 폭이 790px이라, 800→794px로만 살짝
+줄이고 여백도 10→13px로만 늘림(내용 잘림 없이 줄일 수 있는 한계) - 사용자에게 이 한계를 명시적으로
+알림. 최종 좌표: `gvfpanel_1`(20,20,380,245), `fpgaacq_1`(420,20,380,245),
+`fpgaload_1`(13,278,794,184). 헤드리스로 실제 `CanvasWindow`를 restore해서 세 위젯 모두
+`geometry() >= sizeHint()`(잘림 없음)인 것과 겹침 없음을 재확인함.
+
+**작업 중 재확인한 함정**: `builder_state.json`을 손으로 고칠 때, 앱이 아직 실행 중인 상태에서 먼저
+JSON을 편집하고 나중에 앱을 닫으면 `closeEvent`가 예전 in-memory 상태로 방금 고친 JSON을 덮어써버림
+(1회 실제로 겪음 - 20/380 값이 10/395로 되돌아감). 반드시 "먼저 그래스풀하게 닫기 → JSON 편집 →
+재실행" 순서를 지켜야 함([[feedback-no-taskkill]] 메모리에 이미 있던 경고인데 이번에 순서를 한 번
+어겨서 직접 재확인됨). 창 스크린샷은 `GetWindowRect`가 DPI 가상화로 부정확할 수 있어서, 전체 화면을
+찍은 뒤 필요한 영역만 크롭하는 방식이 더 안정적이었음.
+
 ## 알려진 미완/보류 항목
 
+- **gvf 위젯 상세 구현**: `gvf_widget.py`는 입력값 저장(appData) 말고는 아직 레이아웃 뼈대뿐 —
+  표시창 3개가 실제로 어떤 자원을 보여줄지, 시작/종료 시간을 어떻게 계산·갱신할지, "아이디"를
+  어디에 쓸지, "FPGA 취득 간격"/"max FPGA 취득" 값에 맞춰 실제로 주기적 자동 획득을 시도하는
+  타이머 로직, "명령어 입력 디렉토리"에서 실제로 명령어를 실행하는 로직, "반납"/"FPGA 대기열
+  삭제"/시작·중지 버튼이 실제로 무엇을 하는지는 다음 세션에서 이어서 정의/구현해야 함.
 - **Windows에서 `claude` CLI 호출**: `classify_image_with_claude`/`ai_client.py`가
   `subprocess.run(["claude", ...])`로 호출하는 부분이 Windows에 npm으로 깐 `claude`(.cmd 셸
   스크립트)를 `shell=True` 없이 잘 찾는지는 아직 실사용으로 직접 검증 안 됨 (나머지 Windows 이전

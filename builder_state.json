@@ -1,9 +1,66 @@
 {
   "window": {
-    "width": 821,
-    "height": 497
+    "width": 820,
+    "height": 499
   },
   "tabs": [
+    {
+      "title": "gvf",
+      "color": "#f8f3ef",
+      "widgets": [
+        {
+          "id": "gvfpanel_1",
+          "kind": "gvfpanel",
+          "x": 20,
+          "y": 20,
+          "width": 380,
+          "height": 245,
+          "instruction": "",
+          "code": "",
+          "text": null,
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "fpgaacq_1",
+          "kind": "fpgaacquisition",
+          "x": 420,
+          "y": 20,
+          "width": 380,
+          "height": 245,
+          "instruction": "",
+          "code": "",
+          "text": null,
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        },
+        {
+          "id": "fpgaload_1",
+          "kind": "fpgaloading",
+          "x": 13,
+          "y": 278,
+          "width": 794,
+          "height": 184,
+          "instruction": "",
+          "code": "",
+          "text": null,
+          "color": null,
+          "font_family": null,
+          "font_size": null,
+          "group": null,
+          "no_border": false,
+          "checked": null
+        }
+      ]
+    },
     {
       "title": "git",
       "color": "#ddebe2",
@@ -18,7 +75,7 @@
           "instruction": "",
           "code": "",
           "text": null,
-          "color": "#e7e7e7",
+          "color": "#ddebe2",
           "font_family": null,
           "font_size": null,
           "group": null,
@@ -92,7 +149,7 @@
           "instruction": "",
           "code": "",
           "text": "알아서 image 파일 분류",
-          "color": null,
+          "color": "#f9f06b",
           "font_family": null,
           "font_size": null,
           "group": "radiobutton_1",
@@ -109,7 +166,7 @@
           "instruction": "",
           "code": "",
           "text": "클로드의 도움을 받아 상세히 image 파일 분류",
-          "color": null,
+          "color": "#f9f06b",
           "font_family": null,
           "font_size": null,
           "group": "radiobutton_1",
