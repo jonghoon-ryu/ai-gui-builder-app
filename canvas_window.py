@@ -695,6 +695,7 @@ class CanvasPage(QWidget):
                 max_y = max(0, self.height() - obj.height())
                 new_pos.setX(min(max(0, new_pos.x()), max_x))
                 new_pos.setY(min(max(0, new_pos.y()), max_y))
+                new_pos = self._snap_position(obj, new_pos)
                 obj.move(new_pos)
                 return True
 
@@ -779,6 +780,45 @@ class CanvasPage(QWidget):
         new_x = min(max(0, new_x), max(0, self.width() - self._MIN_SIZE))
         new_y = min(max(0, new_y), max(0, self.height() - self._MIN_SIZE))
         widget.setGeometry(new_x, new_y, new_w, new_h)
+
+    _SNAP_THRESHOLD = 3
+
+    def _snap_position(self, widget, pos):
+        """Simple axis-independent snapping while dragging: if `widget`'s
+        left/right edge already lands within `_SNAP_THRESHOLD` px of another
+        widget's (or the canvas's own) left/right edge, snap to match it
+        exactly - same for top/bottom on the vertical axis. No guide lines,
+        no center/distribute-evenly - just enough that "여백을 맞춰줘"
+        becomes the *default* result of a normal drag instead of something
+        that needs a follow-up request answered by hand-measuring pixels
+        (see md_files/future_work_for_poor_developer.md item 7)."""
+        w, h = widget.width(), widget.height()
+        x_candidates = [0, self.width()]
+        y_candidates = [0, self.height()]
+        for _other_id, other_entry in self.entries.items():
+            other = other_entry["widget"]
+            if other is widget:
+                continue
+            x_candidates.append(other.x())
+            x_candidates.append(other.x() + other.width())
+            y_candidates.append(other.y())
+            y_candidates.append(other.y() + other.height())
+
+        def snap_axis(value, size, candidates):
+            best_value = value
+            best_dist = self._SNAP_THRESHOLD + 1
+            for c in candidates:
+                for edge, offset in ((value, 0), (value + size, size)):
+                    dist = abs(edge - c)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_value = c - offset
+            return best_value
+
+        snapped = QPoint(
+            snap_axis(pos.x(), w, x_candidates), snap_axis(pos.y(), h, y_candidates)
+        )
+        return snapped
 
     def _open_behavior_dialog(self, widget_id):
         entry = self.entries.get(widget_id)
