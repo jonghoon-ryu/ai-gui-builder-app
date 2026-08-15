@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFontDialog,
+    QFormLayout,
     QFrame,
     QInputDialog,
     QLineEdit,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QRubberBand,
+    QSpinBox,
     QStyle,
     QTabWidget,
     QVBoxLayout,
@@ -827,6 +829,7 @@ class CanvasPage(QWidget):
         )
         bring_front_action = menu.addAction("맨 앞으로")
         send_back_action = menu.addAction("맨 뒤로")
+        geometry_action = menu.addAction("위치/크기...")
         color_action = menu.addAction("색깔 변경")
         rename_action = menu.addAction("이름 변경") if hasattr(widget, "setText") else None
         font_action = menu.addAction("폰트 설정") if entry["kind"] in TEXTBOX_KINDS else None
@@ -847,6 +850,8 @@ class CanvasPage(QWidget):
             self._bring_widget_to_front(widget_id)
         elif chosen == send_back_action:
             self._send_widget_to_back(widget_id)
+        elif chosen == geometry_action:
+            self._edit_widget_geometry(widget_id)
         elif chosen == color_action:
             self._pick_widget_color(widget_id)
         elif rename_action is not None and chosen == rename_action:
@@ -894,6 +899,61 @@ class CanvasPage(QWidget):
         widget.setAttribute(Qt.WA_StyledBackground, True)
         _apply_scoped_background(widget, color.name())
         entry["color"] = color.name()
+
+    def _edit_widget_geometry(self, widget_id):
+        """Lets the user type an exact X/Y/폭/높이 instead of dragging - mouse
+        drag alone can't reliably hit a specific pixel, which kept forcing
+        hand-edits of builder_state.json for precise layout work (see
+        md_files/future_work_for_poor_developer.md item 6)."""
+        entry = self.entries.get(widget_id)
+        if entry is None:
+            return
+        widget = entry["widget"]
+        geom = widget.geometry()
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"위치/크기 — {widget_id}")
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        x_spin = QSpinBox()
+        x_spin.setRange(0, 9999)
+        x_spin.setValue(geom.x())
+        form.addRow("X", x_spin)
+
+        y_spin = QSpinBox()
+        y_spin.setRange(0, 9999)
+        y_spin.setValue(geom.y())
+        form.addRow("Y", y_spin)
+
+        width_spin = QSpinBox()
+        width_spin.setRange(self._MIN_SIZE, 9999)
+        width_spin.setValue(geom.width())
+        form.addRow("폭", width_spin)
+
+        height_spin = QSpinBox()
+        height_spin.setRange(self._MIN_SIZE, 9999)
+        height_spin.setValue(geom.height())
+        form.addRow("높이", height_spin)
+
+        buttons = QDialogButtonBox()
+        buttons.addButton("Yes", QDialogButtonBox.AcceptRole)
+        buttons.addButton("No", QDialogButtonBox.RejectRole)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        new_w = max(self._MIN_SIZE, width_spin.value())
+        new_h = max(self._MIN_SIZE, height_spin.value())
+        max_x = max(0, self.width() - new_w)
+        max_y = max(0, self.height() - new_h)
+        new_x = min(max(0, x_spin.value()), max_x)
+        new_y = min(max(0, y_spin.value()), max_y)
+        widget.setGeometry(new_x, new_y, new_w, new_h)
 
     def _rename_widget(self, widget_id):
         entry = self.entries.get(widget_id)
