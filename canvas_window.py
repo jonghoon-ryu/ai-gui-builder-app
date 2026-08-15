@@ -52,6 +52,62 @@ def _widget_text(widget):
     return widget.text() if hasattr(widget, "text") else None
 
 
+def _apply_anchors(page):
+    """Repositions (and, when both sides of an axis are anchored, resizes)
+    widgets that declare an `anchor` (see the "anchor" key in a widget's
+    saved JSON) so their left/right/top/bottom margin matches another
+    widget's same-side margin - e.g. `{"right": "fpgaacq_1"}` keeps this
+    widget's right margin equal to fpgaacq_1's right margin even after
+    fpgaacq_1 is resized, instead of needing the x/y recomputed by hand every
+    time (see md_files/future_work_for_poor_developer.md item 2). Only
+    same-edge widget-to-widget anchors are supported (left-to-left,
+    right-to-right, top-to-top, bottom-to-bottom) - this needs no knowledge
+    of the page's own width/height, since that cancels out algebraically.
+    If *both* "left" and "right" (or "top" and "bottom") are given, the
+    widget's width (or height) is stretched to span exactly between the two
+    referenced margins, rather than one side winning - this is the common
+    case in this app (e.g. a bottom panel whose own left/right margins must
+    match two different panels above it). Anchors are resolved in a single
+    left-to-right pass over `page.entries` (dict insertion order, i.e. JSON
+    declaration order) - if widget B anchors to widget A, A must be declared
+    before B in the tab's widget list for B to see A's *anchor-resolved*
+    position rather than its raw saved one (harmless in practice: A's raw
+    and resolved position are the same unless A itself has an anchor)."""
+    for widget_id, entry in page.entries.items():
+        anchor = entry.get("anchor")
+        if not anchor:
+            continue
+        widget = entry["widget"]
+        x, y = widget.pos().x(), widget.pos().y()
+        w, h = widget.width(), widget.height()
+
+        left_ref = page.entries.get(anchor.get("left"))
+        right_ref = page.entries.get(anchor.get("right"))
+        if left_ref and right_ref:
+            left_widget, right_widget = left_ref["widget"], right_ref["widget"]
+            x = left_widget.pos().x()
+            w = right_widget.pos().x() + right_widget.width() - x
+        elif left_ref:
+            x = left_ref["widget"].pos().x()
+        elif right_ref:
+            right_widget = right_ref["widget"]
+            x = right_widget.pos().x() + right_widget.width() - w
+
+        top_ref = page.entries.get(anchor.get("top"))
+        bottom_ref = page.entries.get(anchor.get("bottom"))
+        if top_ref and bottom_ref:
+            top_widget, bottom_widget = top_ref["widget"], bottom_ref["widget"]
+            y = top_widget.pos().y()
+            h = bottom_widget.pos().y() + bottom_widget.height() - y
+        elif top_ref:
+            y = top_ref["widget"].pos().y()
+        elif bottom_ref:
+            bottom_widget = bottom_ref["widget"]
+            y = bottom_widget.pos().y() + bottom_widget.height() - h
+
+        widget.setGeometry(x, y, w, h)
+
+
 def _apply_scoped_background(widget, color_hex):
     """Colors `widget`'s own background without leaking into any dialog a
     click handler might open on/under it. A bare `setStyleSheet("background-
@@ -101,6 +157,7 @@ def _save_state(tabs_widget, window_size=None):
                         "font_size": entry.get("font_size"),
                         "group": entry.get("group"),
                         "no_border": entry.get("no_border", False),
+                        "anchor": entry.get("anchor"),
                         "checked": (
                             entry["widget"].isChecked() if entry["kind"] == "radiobutton" else None
                         ),
@@ -419,7 +476,7 @@ class CanvasPage(QWidget):
     def _create_widget(
         self, kind, widget_id, x, y, instruction="", code="", text=None, color=None,
         width=None, height=None, font_family=None, font_size=None, group=None,
-        no_border=False, checked=None,
+        no_border=False, checked=None, anchor=None,
     ):
         widget = WIDGET_FACTORIES[kind](self)
         widget.setToolTip(widget_id)
@@ -459,6 +516,7 @@ class CanvasPage(QWidget):
             "font_size": font_size,
             "group": group,
             "no_border": no_border,
+            "anchor": anchor,
         }
 
         if text is not None and hasattr(widget, "setText"):
@@ -497,7 +555,7 @@ class CanvasPage(QWidget):
     def restore_widget(
         self, kind, widget_id, x, y, instruction, code, text=None, color=None,
         width=None, height=None, font_family=None, font_size=None, group=None,
-        no_border=False, checked=None,
+        no_border=False, checked=None, anchor=None,
     ):
         """Recreates a widget saved by a previous session, keeping the id
         counter ahead of it so newly dropped widgets don't collide."""
@@ -506,7 +564,7 @@ class CanvasPage(QWidget):
             self._counters[kind] = max(self._counters.get(kind, 0), int(suffix))
         self._create_widget(
             kind, widget_id, x, y, instruction, code, text, color, width, height,
-            font_family, font_size, group, no_border, checked,
+            font_family, font_size, group, no_border, checked, anchor,
         )
 
     _DRAG_THRESHOLD = 4
@@ -839,7 +897,9 @@ class CanvasTabs(QTabWidget):
                     w.get("group"),
                     w.get("no_border", False),
                     w.get("checked"),
+                    w.get("anchor"),
                 )
+            _apply_anchors(page)
 
             index = self.addTab(page, tab_data.get("title") or "tab")
             color_hex = tab_data.get("color")

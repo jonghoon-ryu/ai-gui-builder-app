@@ -57,7 +57,11 @@
           "font_size": null,
           "group": null,
           "no_border": false,
-          "checked": null
+          "checked": null,
+          "anchor": {
+            "left": "gvfpanel_1",
+            "right": "fpgaacq_1"
+          }
         }
       ]
     },
