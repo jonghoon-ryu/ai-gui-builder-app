@@ -360,6 +360,10 @@ class CanvasPage(QWidget):
         self._rubber_band = QRubberBand(QRubberBand.Shape.Rectangle, self)
         self._rubber_band_origin = None
         self._radio_groups = {}  # group id -> QButtonGroup
+        # Single-slot delete undo (not a full undo/redo stack - see
+        # md_files/future_work_for_poor_developer.md item 8): only the most
+        # recent delete can be undone, and doing so consumes this slot.
+        self._last_deleted = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def paintEvent(self, event):
@@ -424,6 +428,9 @@ class CanvasPage(QWidget):
         if event.matches(QKeySequence.StandardKey.Paste):
             self._paste_clipboard()
             return
+        if event.matches(QKeySequence.StandardKey.Undo):
+            self._undo_last_delete()
+            return
         if event.key() in self._ARROW_KEY_DELTAS and self._selected_ids:
             self._nudge_selected_widgets(event.key(), event.modifiers())
             return
@@ -454,8 +461,73 @@ class CanvasPage(QWidget):
         self.update()
 
     def _delete_selected_widgets(self):
+        """Deletes every selected widget, first snapshotting enough to
+        restore them (id, kind, geometry, "동작 설정" code, styling, radio
+        group/anchor) into `self._last_deleted` so Ctrl+Z can bring back
+        *this* delete specifically - losing a widget's connected behavior
+        code to one misclick was the single most painful gap here, more so
+        than move/resize/color mistakes which are trivially redone by hand
+        (see md_files/future_work_for_poor_developer.md item 8, which
+        deliberately scopes this to delete-only rather than a full
+        undo/redo stack)."""
+        snapshot = []
+        for widget_id in self._selected_ids:
+            entry = self.entries.get(widget_id)
+            if entry is None:
+                continue
+            widget = entry["widget"]
+            snapshot.append(
+                {
+                    "id": widget_id,
+                    "kind": entry["kind"],
+                    "x": widget.pos().x(),
+                    "y": widget.pos().y(),
+                    "width": widget.width(),
+                    "height": widget.height(),
+                    "instruction": entry["instruction"],
+                    "code": entry["code"],
+                    "text": _widget_text(widget),
+                    "color": entry.get("color"),
+                    "font_family": entry.get("font_family"),
+                    "font_size": entry.get("font_size"),
+                    "group": entry.get("group"),
+                    "no_border": entry.get("no_border", False),
+                    "anchor": entry.get("anchor"),
+                    "checked": (widget.isChecked() if entry["kind"] == "radiobutton" else None),
+                }
+            )
+        self._last_deleted = snapshot or None
+
         for widget_id in list(self._selected_ids):
             self._remove_widget(widget_id)
+
+    def _undo_last_delete(self):
+        if not self._last_deleted:
+            return
+        restored_ids = set()
+        for data in self._last_deleted:
+            self.restore_widget(
+                data["kind"],
+                data["id"],
+                data["x"],
+                data["y"],
+                data["instruction"],
+                data["code"],
+                data["text"],
+                data["color"],
+                data["width"],
+                data["height"],
+                data.get("font_family"),
+                data.get("font_size"),
+                data.get("group"),
+                data.get("no_border", False),
+                data.get("checked"),
+                data.get("anchor"),
+            )
+            restored_ids.add(data["id"])
+        self._last_deleted = None
+        self._selected_ids = restored_ids
+        self.update()
 
     def _remove_widget(self, widget_id):
         entry = self.entries.pop(widget_id, None)
