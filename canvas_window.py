@@ -1,7 +1,7 @@
 import json
 import os
 
-from PySide6.QtCore import QEvent, QRect, QSize, Qt, QThread, Signal
+from PySide6.QtCore import QEvent, QRect, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -38,6 +38,12 @@ from tab_bar import ColorTabBar
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(BASE_DIR, "builder_state.json")
+# Written every AUTOSAVE_INTERVAL_MS while the app runs, and deleted again on
+# a clean shutdown (see CanvasWindow.closeEvent) - if this file is still
+# around at the *next* startup, the previous run didn't exit cleanly (crash/
+# force-kill), so its contents may be newer than the last real save.
+AUTOSAVE_STATE_FILE = os.path.join(BASE_DIR, "builder_state.autosave.json")
+AUTOSAVE_INTERVAL_MS = 90_000
 EXECUTABLE_PY_DIR = os.path.join(BASE_DIR, "executable_py")
 STANDALONE_DIR = os.path.join(BASE_DIR, "standalone")
 
@@ -124,7 +130,8 @@ def _apply_scoped_background(widget, color_hex):
     widget.setStyleSheet(f"#{object_name} {{ background-color: {color_hex}; }}")
 
 
-def _save_state(tabs_widget, window_size=None):
+def _save_state(tabs_widget, window_size=None, target_file=None):
+    target_file = target_file or STATE_FILE
     if window_size is None:
         # Preserve whatever window size was last saved instead of wiping it out.
         previous = _load_state()
@@ -168,7 +175,7 @@ def _save_state(tabs_widget, window_size=None):
             for i in range(tabs_widget.count())
         ]
     }
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
+    with open(target_file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
@@ -180,6 +187,43 @@ def _load_state():
             return json.load(f)
     except (OSError, ValueError):
         return None
+
+
+def _check_and_offer_autosave_recovery():
+    """Called once at startup, before the normal `_load_state()` restore
+    path. A leftover autosave file means the previous run never reached
+    `CanvasWindow.closeEvent` (crash / force-kill / power loss) - a clean
+    exit always deletes it there. If it exists, ask whether to recover it;
+    either way the stale file is removed afterward so this only ever fires
+    once per unclean shutdown. Returns the recovered state dict, or None if
+    there's nothing to recover (caller should fall back to `_load_state()`)."""
+    if not os.path.exists(AUTOSAVE_STATE_FILE):
+        return None
+
+    try:
+        with open(AUTOSAVE_STATE_FILE, "r", encoding="utf-8") as f:
+            autosave_state = json.load(f)
+    except (OSError, ValueError):
+        autosave_state = None
+
+    recovered = None
+    if autosave_state and autosave_state.get("tabs"):
+        reply = QMessageBox.question(
+            None,
+            "이전 작업 복구",
+            "이전 실행이 정상적으로 종료되지 않았습니다.\n"
+            "자동 저장된 마지막 작업 내용을 복구할까요?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            recovered = autosave_state
+
+    try:
+        os.remove(AUTOSAVE_STATE_FILE)
+    except OSError:
+        pass
+    return recovered
 
 
 def get_saved_window_size():
@@ -871,7 +915,7 @@ class CanvasTabs(QTabWidget):
         self.tabBar().setContextMenuPolicy(Qt.CustomContextMenu)
         self.tabBar().customContextMenuRequested.connect(self._on_tab_context_menu)
 
-        state = _load_state()
+        state = _check_and_offer_autosave_recovery() or _load_state()
         if state and state.get("tabs"):
             self._restore_from_state(state)
         else:
@@ -1023,6 +1067,19 @@ class CanvasWindow(QMainWindow):
         self.tabs = CanvasTabs()
         self.setCentralWidget(self.tabs)
 
+        # Crash/force-kill safety net - a clean exit already saves via
+        # closeEvent below, so this is only ever actually needed once the
+        # app *doesn't* reach that (see _check_and_offer_autosave_recovery).
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setInterval(AUTOSAVE_INTERVAL_MS)
+        self._autosave_timer.timeout.connect(self._autosave)
+        self._autosave_timer.start()
+
+    def _autosave(self):
+        _save_state(
+            self.tabs, window_size=(self.width(), self.height()), target_file=AUTOSAVE_STATE_FILE
+        )
+
     def save_template(self):
         _save_state(self.tabs, window_size=(self.width(), self.height()))
         QMessageBox.information(
@@ -1031,6 +1088,12 @@ class CanvasWindow(QMainWindow):
 
     def closeEvent(self, event):
         _save_state(self.tabs, window_size=(self.width(), self.height()))
+        # A clean shutdown makes the autosave file redundant (and, if left
+        # behind, would wrongly look like a crash on the next launch).
+        try:
+            os.remove(AUTOSAVE_STATE_FILE)
+        except OSError:
+            pass
         super().closeEvent(event)
 
     def export_dialog(self):

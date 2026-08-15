@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .claude/
 standalone/
+builder_state.autosave.json

@@ -907,6 +907,29 @@ width=804)가 나오는 것을 확인했고, `fpgaacq_1`의 위치를 임시로 
 해석된 라이브 좌표(`widget.pos()`/`size()`)를 읽어서 절대값으로 굽기 때문에 별도 대응이 필요 없음
 (`instruction` 필드와 같은 성격의 "빌더 전용" 메타데이터).
 
+## 자동 저장(크래시 복구) 추가 (2026-08-15)
+
+`future_work_for_poor_developer.md`의 3순위 항목. 기존엔 `_save_state`가 정상 종료
+(`CanvasWindow.closeEvent`)나 "틀 저장" 버튼을 눌렀을 때만 실행돼서, 강제 종료·크래시가 나면 마지막
+저장 이후 작업이 전부 사라지는 문제가 있었다.
+
+`CanvasWindow.__init__`에 `QTimer`(90초 간격, `AUTOSAVE_INTERVAL_MS`)를 추가해서
+`builder_state.autosave.json`(`AUTOSAVE_STATE_FILE`, `.gitignore`에도 추가함)에 주기적으로 저장한다.
+`_save_state`는 `target_file` 인자를 받도록 확장해서 이 두 번째 파일에 쓸 수 있게 됨. 정상
+종료(`closeEvent`)는 기존처럼 진짜 `builder_state.json`에 저장한 뒤, 이번엔 이 autosave 파일을 지운다
+- 그래서 다음 실행 시 이 파일이 남아있다는 것 자체가 "직전 실행이 비정상 종료됐다"는 신호가 됨.
+
+시작 시점(`CanvasTabs.__init__`)에 새 함수 `_check_and_offer_autosave_recovery()`를 먼저 호출한다 -
+autosave 파일이 없으면 조용히 넘어가고(다이얼로그 없음), 있으면 "이전 실행이 정상적으로 종료되지
+않았습니다. 복구할까요?" 확인창을 띄워서 예/아니오에 따라 그 내용을 쓸지 기존 `builder_state.json`을
+쓸지 결정한다. 어느 쪽이든 확인 후에는 이 autosave 파일을 지워서, 비정상 종료 흔적이 한 번 물어본
+뒤에는 다시 안 나타나게 함.
+
+헤드리스로 5가지 시나리오(autosave 없음/복구=예/복구=아니오/타이머로 실제 파일 쓰기/정상 종료 시
+정리)를 전부 확인함(`QMessageBox.question`을 패치해서 팝업 없이 예/아니오 분기 검증). 실제
+`builder_state.json`을 대상으로도 앱을 재실행해서 autosave 파일이 없을 때 조용히 넘어가는 것까지
+확인함.
+
 ## 실행 py 내보내기 이력
 
 기존 `standalone/` 디렉토리는 `executable_py/`로 이름이 바뀌었다 (2026-08-15). "실행 py 저장" 결과물이
