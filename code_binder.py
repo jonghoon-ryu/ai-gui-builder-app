@@ -158,10 +158,15 @@ _DESCRIBABLE_KIND_LABELS = {
     "QLineEdit": "입력창",
     "QComboBox": "드롭박스",
     "QRadioButton": "라디오 버튼",
+    "QCheckBox": "체크 박스",
     "QFrame": "구분선",
+    "QGroupBox": "사각형(컨테이너)",
     "AlarmClockPanel": "알람 시계",
     "WindowStatusPanel": "윈도우 현황판",
     "GitPanel": "git 비교 패널",
+    "GvfPanel": "FPGA 자원 현황 패널",
+    "FpgaAcquisitionPanel": "FPGA 자원 취득 패널",
+    "FpgaLoadingPanel": "FPGA loading 패널",
 }
 
 _ENTRY_KIND_LABELS = {
@@ -171,14 +176,19 @@ _ENTRY_KIND_LABELS = {
     "dirbox": "디렉토리 입력창",
     "combobox": "드롭박스",
     "radiobutton": "라디오 버튼",
+    "checkbox": "체크 박스",
     "hline": "구분선",
     "vline": "구분선",
+    "rect_group": "사각형(컨테이너)",
 }
 
 _PANEL_LABELS = {
     "alarmclock": "알람 시계",
     "windowstatus": "윈도우 현황판",
     "gitpanel": "git 비교 패널",
+    "gvfpanel": "FPGA 자원 현황 패널",
+    "fpgaacquisition": "FPGA 자원 취득 패널",
+    "fpgaloading": "FPGA loading 패널",
 }
 
 _PANEL_DESCRIPTIONS = {
@@ -200,6 +210,25 @@ _PANEL_DESCRIPTIONS = {
         "C/D/E 드라이브를 훑어 git 저장소를 찾아 local 칸을 채우고, '전체 status check' 버튼은 "
         "remote/local이 둘 다 채워진 쌍을 한꺼번에 비교합니다."
     ),
+    "gvfpanel": (
+        "FPGA #1~#3의 표시창 3개가 세로로 나란히 있습니다. 각 줄은 FPGA 번호 자리표시자, 숫자 "
+        "3자리 입력칸(0~999), 검은 바탕 초록 글씨의 디지털 시계 스타일 표시창('시작 00:00:00'/"
+        "'종료 00:00:00'), 그리고 '소유중'/'반납' 버튼으로 구성됩니다. 숫자 입력칸 값은 자동 저장되어 "
+        "재시작해도 유지됩니다."
+    ),
+    "fpgaacquisition": (
+        "'아이디' 문자열 입력칸, 'FPGA 획득 마지막 시도' 시:분:초 입력칸(+오른쪽 끝 '자동 시간 연장' "
+        "체크 박스), 'FPGA 취득 간격'(분 단위, 기본 120분, 1~1440분 조절), 'max FPGA 취득'(기본 1, "
+        "최소 1) 숫자 입력칸, 명령어 실행 디렉토리 입력칸(폴더 아이콘으로 선택), 'FPGA 대기열 삭제' "
+        "버튼, 그리고 '시작'/'중지' 버튼 한 쌍으로 구성됩니다. '시작'을 누르면 그 글자가 '동작중'으로 "
+        "바뀌고, 이어서 '중지'를 누르면 '시작' 버튼 글자가 '다시 시작'으로 바뀝니다. 아이디/시각/간격/"
+        "개수/디렉토리 값은 자동 저장되어 재시작해도 유지됩니다."
+    ),
+    "fpgaloading": (
+        "라디오 버튼 그룹 3개가 세로로 나란히 있습니다: 버전(v18.0/v19.0/v24.0/v25.0), FPGA 번호(#1/"
+        "#2/#3, 각 옵션 옆에 숫자 3자리 입력칸도 함께), 메모리 타입(TLC/QLC/SLC-QLC/TLC-QLC). 맨 "
+        "오른쪽에 '시작' 버튼이 있습니다. 선택 상태는 자동 저장되어 재시작해도 유지됩니다."
+    ),
 }
 
 
@@ -214,61 +243,159 @@ def _tab_pages(page):
     return [(tabs_widget.tabText(i), tabs_widget.widget(i)) for i in range(tabs_widget.count())]
 
 
+def _widget_display_text(child):
+    """Best-effort label text for a widget that doesn't carry the builder's
+    own `entries` metadata - a plain QGroupBox has `.title()` instead of
+    `.text()`, and QComboBox has `.currentText()` instead, so a bare
+    `hasattr(child, "text")` check alone would silently show nothing for
+    either."""
+    if hasattr(child, "title") and callable(child.title) and not hasattr(child, "text"):
+        return child.title().strip()
+    if hasattr(child, "currentText") and callable(child.currentText):
+        return child.currentText().strip()
+    if hasattr(child, "text") and callable(child.text):
+        return child.text().strip()
+    return ""
+
+
+def _describe_one_widget(child, indent):
+    """Renders one widget's own line, plus - for a 사각형(컨테이너)
+    (QGroupBox) - the widgets placed directly inside it, one indent level
+    further (containers are never nested inside each other, so this one
+    extra level covers every case)."""
+    pad = "    " * indent
+    label = _DESCRIBABLE_KIND_LABELS.get(type(child).__name__)
+    if label is None:
+        return []
+    text = _widget_display_text(child)
+    header = f'{pad}- {label} "{text}"' if text else f"{pad}- {label}"
+    if type(child).__name__ in ("QCheckBox", "QRadioButton"):
+        header += " (체크됨)" if child.isChecked() else " (체크 안 됨)"
+    lines = [header]
+    if type(child).__name__ == "QGroupBox":
+        for grandchild in child.findChildren(QWidget):
+            if grandchild.parent() is child:
+                lines.extend(_describe_one_widget(grandchild, indent + 1))
+    return lines
+
+
 def _describe_page_widgets(page):
-    """Lists this tab's own widgets (direct children only, so a panel like
-    AlarmClockPanel is described as one item rather than its internals).
-    Used when `page` doesn't carry the builder's `entries` metadata (e.g.
-    an exported standalone app), so only the widget kind/label is known -
-    no click-behavior detail, since `instruction` text isn't exported."""
+    """Lists this tab's own widgets (direct children, plus one level of
+    nesting inside any 사각형(컨테이너)). Used when `page` doesn't carry the
+    builder's `entries` metadata (e.g. an exported standalone app), so only
+    the widget kind/label/current text/checked-state is known - no
+    click-behavior detail, since `instruction` text isn't exported (only
+    the compiled code is)."""
     items = []
     for child in page.findChildren(QWidget):
-        if child.parent() is not page:
-            continue
-        label = _DESCRIBABLE_KIND_LABELS.get(type(child).__name__)
-        if label is None:
-            continue
-        text = child.text().strip() if hasattr(child, "text") and callable(child.text) else ""
-        items.append(f"  - {label}: {text}" if text else f"  - {label}")
+        if child.parent() is page:
+            items.extend(_describe_one_widget(child, 0))
     return items
+
+
+def _describe_one_entry(widget_id, entry, indent):
+    """Renders one entry's own lines (label/text/checked-state/color/
+    instruction), at the given indent level. Does not recurse into
+    children - `_describe_page_entries` handles that so it can also decide
+    which entries are top-level vs. nested."""
+    pad = "    " * indent
+    kind = entry.get("kind")
+    if kind in _PANEL_DESCRIPTIONS:
+        return [f"{pad}- {_PANEL_LABELS[kind]}: {_PANEL_DESCRIPTIONS[kind]}"]
+
+    label = _ENTRY_KIND_LABELS.get(kind, kind)
+    text = (entry.get("text") or "").strip()
+    header = f'{pad}- {label} "{text}"' if text else f"{pad}- {label}"
+    if kind in ("radiobutton", "checkbox"):
+        # Not read from entry["checked"] - the entries dict only carries
+        # that field at save/restore time, not during a live session (see
+        # CanvasPage._create_widget) - the widget itself is the live
+        # source of truth for its current checked state.
+        widget = entry.get("widget")
+        is_checked = bool(widget.isChecked()) if widget is not None else False
+        header += " (체크됨)" if is_checked else " (체크 안 됨)"
+    lines = [header]
+
+    color = entry.get("color")
+    if color:
+        lines.append(f"{pad}  색깔: {color}")
+
+    instruction = (entry.get("instruction") or "").strip()
+    if instruction:
+        instruction_lines = instruction.splitlines()
+        lines.append(f"{pad}  동작: {instruction_lines[0]}")
+        lines.extend(f"{pad}  {line}" for line in instruction_lines[1:])
+    return lines
 
 
 def _describe_page_entries(page):
     """Like `_describe_page_widgets`, but for a builder `CanvasPage`: reads
     the natural-language `instruction` each widget's behavior was generated
-    from, so a button is described by what it actually does when clicked,
-    not just its label."""
+    from (so a button is described by what it actually does when clicked,
+    not just its label), whether a checkbox/radio button is currently
+    checked, any custom color, and - for a template 사각형(컨테이너) -
+    recursively lists the widgets placed inside it indented one level
+    further, so nesting is visible instead of a flat list that hides which
+    widgets live inside which container."""
+    children_by_parent = {}
+    for widget_id, entry in page.entries.items():
+        children_by_parent.setdefault(entry.get("parent_id"), []).append((widget_id, entry))
+
+    def render(widget_id, entry, indent):
+        lines = _describe_one_entry(widget_id, entry, indent)
+        for child_id, child_entry in children_by_parent.get(widget_id, []):
+            lines.extend(render(child_id, child_entry, indent + 1))
+        return lines
+
     items = []
-    for entry in page.entries.values():
-        kind = entry.get("kind")
-        if kind in _PANEL_DESCRIPTIONS:
-            items.append(f"  - {_PANEL_LABELS[kind]}: {_PANEL_DESCRIPTIONS[kind]}")
-            continue
-        label = _ENTRY_KIND_LABELS.get(kind, kind)
-        text = (entry.get("text") or "").strip()
-        items.append(f'  - {label} "{text}"' if text else f"  - {label}")
-        instruction = (entry.get("instruction") or "").strip()
-        if instruction:
-            instruction_lines = instruction.splitlines()
-            items.append(f"    동작: {instruction_lines[0]}")
-            items.extend(f"    {line}" for line in instruction_lines[1:])
+    for widget_id, entry in children_by_parent.get(None, []):
+        items.extend(render(widget_id, entry, 0))
     return items
 
 
 def app_overview_text(page):
-    """Live overview of the whole app: current tab list and how many
-    widgets each holds. Recomputed on every call by reading the actual
-    tab widget, so it never goes stale when tabs are added/removed/edited."""
+    """Live overview of the whole app: current tab list, how many widgets
+    each holds (broken down by widget kind), and how many widgets across
+    the whole app have a click behavior attached. Recomputed on every call
+    by reading the actual tab widget, so it never goes stale when tabs are
+    added/removed/edited."""
     pages = _tab_pages(page)
     lines = [
-        "이 앱은 사용자가 직접 만든 개인용 도구 모음입니다.",
+        "이 앱은 사용자가 직접 이 GUI 빌더로 만든 개인용 도구 모음입니다.",
+        "탭마다 서로 다른 화면(도구)이 있고, 각 화면 안의 버튼/입력창 등을 눌렀을 때의 동작은 "
+        "코딩이 아니라 자연어 설명으로 만들어졌습니다.",
+        "",
         f"현재 {len(pages)}개의 탭이 있습니다:",
         "",
     ]
+    total_widgets = 0
+    total_with_behavior = 0
     for title, tab_page in pages:
-        count = len(tab_page.entries) if hasattr(tab_page, "entries") else len(_describe_page_widgets(tab_page))
-        lines.append(f"- {title} ({count}개 항목)")
+        if hasattr(tab_page, "entries"):
+            entries = list(tab_page.entries.values())
+            count = len(entries)
+            with_behavior = sum(1 for e in entries if (e.get("instruction") or "").strip())
+            kind_counts = {}
+            for e in entries:
+                kind = e.get("kind")
+                label = _PANEL_LABELS.get(kind) or _ENTRY_KIND_LABELS.get(kind, kind)
+                kind_counts[label] = kind_counts.get(label, 0) + 1
+            breakdown = ", ".join(f"{label} {n}개" for label, n in kind_counts.items())
+            suffix = f": {breakdown}" if breakdown else ""
+            lines.append(f"- {title} ({count}개 항목{suffix})")
+            total_widgets += count
+            total_with_behavior += with_behavior
+        else:
+            count = len(_describe_page_widgets(tab_page))
+            lines.append(f"- {title} ({count}개 항목)")
+            total_widgets += count
     lines.append("")
-    lines.append("각 탭의 자세한 사용법은 '각 탭에 대한 설명' 버튼을 눌러 확인하세요.")
+    lines.append(f"앱 전체 위젯 수: {total_widgets}개")
+    if total_with_behavior:
+        lines.append(f"그중 클릭 등 동작이 연결된 위젯: {total_with_behavior}개")
+    lines.append("")
+    lines.append("각 탭의 자세한 사용법(위젯 하나하나가 무엇이고 어떤 동작을 하는지)은 "
+                  "'각 탭에 대한 설명' 버튼을 눌러 확인하세요.")
     return "\n".join(lines)
 
 
