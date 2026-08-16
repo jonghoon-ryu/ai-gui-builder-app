@@ -78,13 +78,13 @@ venv\Scripts\pythonw.exe main.py
 | `ai_client.py` | `claude` CLI 호출해 동작 코드 생성 (허용 함수 화이트리스트 프롬프트) |
 | `code_binder.py` | 생성 코드를 제한된 네임스페이스에서 실행, 위젯 시그널에 바인딩 |
 | `exporter.py` | 캔버스 상태를 독립 실행 가능한 `.py` 소스로 직렬화 |
-| `alarm_widget.py` | "알람 시계" 위젯 (캘린더/시간 선택, 남은 시간 표시, 아날로그 시계, 자연어 알람 등록(`claude` CLI 호출), `alarm_state.json` 저장/복원) |
+| `alarm_widget.py` | "알람 시계" 위젯 (캘린더/시간 선택, 남은 시간 표시, 아날로그 시계, 자연어 알람 등록(`claude` CLI 호출), `alarm_state.json` 저장/복원 — 빌더에서는 지금 활성 틀의 `builder_framework/<이름>/appData/`를 따라감, 2026-08-16부터) |
 | `window_status_widget.py` | "윈도우 현황" 위젯 (Windows 버전/CPU/메모리/디스크/휴지통, `ctypes`+`winreg`+`subprocess` 사용, 추가 pip 패키지 없음) |
 | `git_widget.py` | "git" 위젯 (local/remote 비교·stash 6쌍, local drive 검색, 전체 status check. `git` CLI 필요) |
 | `theme.py` | 빌더 창(캔버스/팔레트)에 적용하는 앱 전역 QSS. `main.py`에서 `QApplication.setStyleSheet`로 적용. standalone 내보내기에도 항상 함께 포함됨 |
 | `tab_bar.py` | 탭바 구현 (`ColorTabBar`: 둥근 모서리, 탭별 색깔, 선택된 탭 볼드). 빌더/standalone 양쪽에서 같은 소스 파일 그대로 사용 |
 | `md_files/` | 문서(`how_to_use.md`, `tool_requirement.md`) 모음 |
-| `builder_framework/default/` | "틀 저장"이 쓰는 `builder_state.json`(2026-08-16부터 저장소 루트에서 이 위치로 옮김, 앱 시작 시 자동 로드되는 그 파일)이 있는 곳. "실행 py 저장"/"standalone 실행 파일 저장" 저장창도 기본으로 여기서 시작해서, 한 "틀"에서 나온 상태 파일과 내보낸 결과물이 한곳에 모인다 |
+| `builder_framework/default/` | "틀 저장"이 쓰는 `builder_state.json`(2026-08-16부터 저장소 루트에서 이 위치로 옮김, 앱 시작 시 자동 로드되는 그 파일)과 alarm/git/gvf 위젯의 `appData/`가 있는 곳. 앱은 항상 이 폴더를 활성 틀로 시작한다 — "실행 py 저장"/"standalone 실행 파일 저장" 저장창은 고정된 여기가 아니라 **지금 활성화된 틀의 폴더**에서 열려서, 한 "틀"에서 나온 상태 파일과 내보낸 결과물이 한곳에 모인다 |
 | `builder_framework/<이름>/` | "다른 이름으로 틀 저장"으로 만든, `default`와 같은 구조의 이름 붙은 틀들 |
 | `examples/website_link_button/app.py` | 참고용 최소 예제(버튼 1개로 URL 열기). 2026-08-16에 `executable_py/2026_07_26/app.py`에서 옮김 — `executable_py/`/`standalone/`(2026-08-16 이전 내보내기 결과물이 쌓이던 예전 위치)는 이 파일만 옮긴 뒤 정리함, 저장 다이얼로그는 더 이상 여기서 시작하지 않음 |
 
