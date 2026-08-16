@@ -37,7 +37,7 @@ from window_status_widget import WindowStatusPanel
 from behavior_dialog import BehaviorDialog
 from code_binder import SIGNAL_BY_KIND, HandlerCompileError, bind_handler, compile_handler
 from exporter import build_exe, export_to_file
-from layout_templates import TEMPLATE_SPECS_BY_KEY, equalize_margins
+from layout_templates import TEMPLATE_SPECS_BY_KEY, _cluster_into_rows, equalize_margins
 from palette_window import WIDGET_KIND_MIME, WIDGET_TEMPLATE_MIME
 from tab_bar import ColorTabBar
 
@@ -357,6 +357,40 @@ TEXTBOX_KINDS = ("lineedit", "urlbox", "dirbox")
 CHECKABLE_KINDS = ("radiobutton", "checkbox")
 
 
+class _SelectionOverlay(QWidget):
+    """Always the topmost sibling on a `CanvasPage` - draws each selected
+    widget's dashed outline here rather than in `CanvasPage.paintEvent`
+    itself, because a widget nested inside a `rect_group` would otherwise
+    have its outline painted *underneath* the container's own opaque
+    background: Qt paints a parent's own paintEvent before any of its
+    children, so a container always paints over whatever the page (the
+    container's own parent) drew in that region first - a top-level widget
+    happened to look fine either way since nothing else covers its margin,
+    which is why this only became visible as a bug for nested widgets. This
+    overlay only ever draws thin lines (never fills its background), so
+    everything beneath it - at any nesting depth - still shows through
+    normally; it just always paints last (topmost in z-order)."""
+
+    def __init__(self, page):
+        super().__init__(page)
+        self._page = page
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+    def paintEvent(self, event):
+        page = self._page
+        if not page._selected_ids:
+            return
+        painter = QPainter(self)
+        pen = QPen(Qt.GlobalColor.blue)
+        pen.setStyle(Qt.PenStyle.DashLine)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        for widget_id in page._selected_ids:
+            entry = page.entries.get(widget_id)
+            if entry:
+                painter.drawRect(page._page_rect(entry["widget"]).adjusted(-3, -3, 3, 3))
+
+
 class CanvasPage(QWidget):
     """Free-form drop surface. Dropped widgets are registered under a
     unique id (exposed both as a tooltip and as `self.<id>` on this page)
@@ -374,6 +408,13 @@ class CanvasPage(QWidget):
         self._drag_start_global = None
         self._drag_start_widget_pos = None
         self._drag_moved = False
+        # Populated only when the dragged widget is itself part of a 2+
+        # multi-selection (see eventFilter's MouseMove) - every other
+        # selected widget's id and its page-space position at the moment
+        # the drag actually started moving, so they can be carried along by
+        # the same delta the primary (self._drag_widget) ends up moving by.
+        self._drag_group_ids = []
+        self._drag_group_start = {}
         self._resize_widget = None
         self._resize_mode = None
         self._resize_start_global = None
@@ -387,6 +428,21 @@ class CanvasPage(QWidget):
         # recent delete can be undone, and doing so consumes this slot.
         self._last_deleted = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._selection_overlay = _SelectionOverlay(self)
+        self._selection_overlay.setGeometry(self.rect())
+        self._selection_overlay.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._selection_overlay.setGeometry(self.rect())
+
+    def _refresh_selection_overlay(self):
+        """Call after anything that changes *which* widgets are selected,
+        or moves/resizes a selected widget - the overlay only repaints
+        reactively to its own `.update()`/z-order, it doesn't know on its
+        own when `_selected_ids` or a selected widget's geometry changed."""
+        self._selection_overlay.raise_()
+        self._selection_overlay.update()
 
     def _page_rect(self, widget):
         """`widget.geometry()` is relative to its *immediate* Qt parent -
@@ -452,25 +508,26 @@ class CanvasPage(QWidget):
             return self._container_min_size(widget.toolTip())
         return self._MIN_SIZE, self._MIN_SIZE
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if not self._selected_ids:
-            return
-        painter = QPainter(self)
-        pen = QPen(Qt.GlobalColor.blue)
-        pen.setStyle(Qt.PenStyle.DashLine)
-        pen.setWidth(2)
-        painter.setPen(pen)
-        for widget_id in self._selected_ids:
-            entry = self.entries.get(widget_id)
-            if entry:
-                painter.drawRect(self._page_rect(entry["widget"]).adjusted(-3, -3, 3, 3))
-
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.setFocus()
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                # This page-level handler only runs for a click on truly
+                # empty canvas *or* one that Qt bubbled up here because the
+                # widget actually clicked on doesn't itself accept plain
+                # mouse presses (e.g. a rect_group/QGroupBox, or a line) -
+                # unlike a QPushButton, which does. Ctrl+click's job is
+                # purely "add that widget to the selection" (handled in
+                # eventFilter, which already ran before this bubble-up) -
+                # clearing the selection or arming a rubber-band drag here
+                # would immediately wipe out what Ctrl+click just added,
+                # which was the actual bug reported (worked for buttons,
+                # not for rect_group boxes, because only rect_group's press
+                # bubbles up to this handler in the first place).
+                super().mousePressEvent(event)
+                return
             self._selected_ids = set()
-            self.update()
+            self._refresh_selection_overlay()
             self._rubber_band_origin = event.position().toPoint()
             self._rubber_band.setGeometry(QRect(self._rubber_band_origin, QSize()))
             self._rubber_band.show()
@@ -492,7 +549,7 @@ class CanvasPage(QWidget):
                 for widget_id, entry in self.entries.items()
                 if select_rect.intersects(self._page_rect(entry["widget"]))
             }
-            self.update()
+            self._refresh_selection_overlay()
         super().mouseReleaseEvent(event)
 
     _ARROW_KEY_DELTAS = {
@@ -505,6 +562,10 @@ class CanvasPage(QWidget):
     _NUDGE_STEP_SHIFT = 10
 
     def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self._selected_ids:
+            self._selected_ids = set()
+            self._refresh_selection_overlay()
+            return
         if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) and self._selected_ids:
             self._delete_selected_widgets()
             return
@@ -545,7 +606,7 @@ class CanvasPage(QWidget):
             new_pos.setX(min(max(0, new_pos.x()), max_x))
             new_pos.setY(min(max(0, new_pos.y()), max_y))
             widget.move(new_pos)
-        self.update()
+        self._refresh_selection_overlay()
 
     def _delete_selected_widgets(self):
         """Deletes every selected widget, first snapshotting enough to
@@ -639,7 +700,7 @@ class CanvasPage(QWidget):
             restored_ids.add(data["id"])
         self._last_deleted = None
         self._selected_ids = restored_ids
-        self.update()
+        self._refresh_selection_overlay()
 
     def _remove_widget(self, widget_id):
         entry = self.entries.pop(widget_id, None)
@@ -653,7 +714,7 @@ class CanvasPage(QWidget):
         if hasattr(self, widget_id):
             delattr(self, widget_id)
         self._selected_ids.discard(widget_id)
-        self.update()
+        self._refresh_selection_overlay()
 
     def _copy_selected_widgets(self):
         """Copying a selected `rect_group` also copies its children, as a
@@ -773,7 +834,7 @@ class CanvasPage(QWidget):
             pasted_ids.add(widget_id)
 
         self._selected_ids = pasted_ids
-        self.update()
+        self._refresh_selection_overlay()
 
     def dragEnterEvent(self, event):
         mime = event.mimeData()
@@ -920,6 +981,10 @@ class CanvasPage(QWidget):
             widget.resize(*LINE_DEFAULT_SIZE[kind])
         widget.move(x, y)
         widget.show()
+        # A newly-created widget is appended to the end of its parent's
+        # child list (topmost among siblings) - if its parent is the page
+        # itself, that would otherwise put it above the selection overlay.
+        self._selection_overlay.raise_()
 
         if code:
             try:
@@ -961,6 +1026,17 @@ class CanvasPage(QWidget):
         event_type = event.type()
 
         if event_type == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                # Ctrl+click is the mouse shortcut for the right-click menu's
+                # "그룹 선택" - adds this widget to whatever's already
+                # selected instead of replacing it. Deliberately doesn't
+                # `return True` here so a normal drag can still start right
+                # away (Ctrl+click-and-drag both selects and moves).
+                widget_id = obj.toolTip()
+                if widget_id:
+                    self._selected_ids.add(widget_id)
+                    self._refresh_selection_overlay()
+
             mode = self._resize_mode_at(obj, event.position().toPoint())
             if mode:
                 self._resize_widget = obj
@@ -969,10 +1045,18 @@ class CanvasPage(QWidget):
                 self._resize_start_geom = obj.geometry()
                 return True
 
-            self._drag_widget = obj
-            self._drag_start_global = event.globalPosition().toPoint()
-            self._drag_start_widget_pos = obj.pos()
-            self._drag_moved = False
+            # A plain click alone must never move anything - the widget has
+            # to already be selected first (right-click "선택"/"그룹 선택",
+            # rubber-band, or Ctrl+click just above in this same handler)
+            # before a left-drag on it is allowed to reposition it. Not
+            # selected -> fall through without arming a drag, so the click
+            # still reaches the widget normally (button click, combobox
+            # open, text focus...), it just can't be dragged yet.
+            if obj.toolTip() in self._selected_ids:
+                self._drag_widget = obj
+                self._drag_start_global = event.globalPosition().toPoint()
+                self._drag_start_widget_pos = obj.pos()
+                self._drag_moved = False
             return False
 
         if event_type == QEvent.Type.MouseMove:
@@ -1014,6 +1098,40 @@ class CanvasPage(QWidget):
                         self._drag_start_widget_pos = obj.pos()
                         delta = QPoint(0, 0)
 
+                    # Group move (request 5): dragging a widget that's part
+                    # of a 2+ multi-selection carries every other selected
+                    # widget along by the same delta, preserving their
+                    # relative positions. Skip a member whose own parent is
+                    # also in the selection - it already gets dragged along
+                    # for free as a real Qt child of that other member (e.g.
+                    # a container and one of its own children both selected).
+                    self._drag_group_ids = []
+                    self._drag_group_start = {}
+                    primary_id = obj.toolTip()
+                    if len(self._selected_ids) > 1 and primary_id in self._selected_ids:
+                        for wid in self._selected_ids:
+                            if wid == primary_id:
+                                continue
+                            other_entry = self.entries.get(wid)
+                            if other_entry is None:
+                                continue
+                            if other_entry.get("parent_id") in self._selected_ids:
+                                continue
+                            other_widget = other_entry["widget"]
+                            if other_widget.parentWidget() is not self:
+                                page_pos = other_widget.mapTo(self, QPoint(0, 0))
+                                other_widget.setParent(self)
+                                other_widget.move(page_pos)
+                                other_widget.show()
+                                other_widget.raise_()
+                            self._drag_group_ids.append(wid)
+                            self._drag_group_start[wid] = other_widget.pos()
+
+                    # obj.raise_() (and any group members') above may have
+                    # put them above the selection overlay - put it back on
+                    # top so the dashed outline keeps showing through the drag.
+                    self._selection_overlay.raise_()
+
                 new_pos = self._drag_start_widget_pos + delta
                 max_x = max(0, self.width() - obj.width())
                 max_y = max(0, self.height() - obj.height())
@@ -1021,6 +1139,21 @@ class CanvasPage(QWidget):
                 new_pos.setY(min(max(0, new_pos.y()), max_y))
                 new_pos = self._snap_position(obj, new_pos)
                 obj.move(new_pos)
+
+                if self._drag_group_ids:
+                    # Same *final* delta (after this widget's own snap/
+                    # clamp) applied to every other member, so the whole
+                    # group moves as one rigid unit rather than the primary
+                    # drifting away from the rest via its own snapping.
+                    applied_delta = new_pos - self._drag_start_widget_pos
+                    for wid in self._drag_group_ids:
+                        other_widget = self.entries[wid]["widget"]
+                        candidate = self._drag_group_start[wid] + applied_delta
+                        g_max_x = max(0, self.width() - other_widget.width())
+                        g_max_y = max(0, self.height() - other_widget.height())
+                        candidate.setX(min(max(0, candidate.x()), g_max_x))
+                        candidate.setY(min(max(0, candidate.y()), g_max_y))
+                        other_widget.move(candidate)
                 return True
 
             if self._resize_widget is None and self._drag_widget is None:
@@ -1040,10 +1173,16 @@ class CanvasPage(QWidget):
                 was_dragged = self._drag_moved
                 if was_dragged:
                     self._resolve_drop_parent(obj)
+                    for wid in self._drag_group_ids:
+                        other_entry = self.entries.get(wid)
+                        if other_entry is not None:
+                            self._resolve_drop_parent(other_entry["widget"])
                 self._drag_widget = None
                 self._drag_start_global = None
                 self._drag_start_widget_pos = None
                 self._drag_moved = False
+                self._drag_group_ids = []
+                self._drag_group_start = {}
                 return was_dragged
 
         if event_type == QEvent.Type.Leave and obj is not self._resize_widget and obj is not self._drag_widget:
@@ -1232,9 +1371,25 @@ class CanvasPage(QWidget):
             return
         widget = entry["widget"]
 
+        # Snapshot *before* the menu can change anything - whether this
+        # widget is already part of the current selection decides whether
+        # right-clicking it preserves a multi-selection (so the batch
+        # actions below can see the full group) or replaces it down to just
+        # this widget (see the selection side-effect applied after
+        # menu.exec() below).
+        was_already_selected = widget_id in self._selected_ids
+
         menu = QMenu(self)
         id_action = menu.addAction(f"ID: {widget_id}")
         id_action.setEnabled(False)
+        menu.addSeparator()
+
+        # Right-clicking a widget (or a rect_group's own empty area, which
+        # Qt routes here the same way since nothing else covers that pixel)
+        # selects it - see the mutation after menu.exec() below. "그룹 선택"
+        # is the explicit way to *add* to the current selection instead of
+        # replacing it, so multiple widgets can be built up one at a time.
+        group_select_action = menu.addAction("그룹 선택")
         menu.addSeparator()
 
         behavior_action = (
@@ -1285,7 +1440,27 @@ class CanvasPage(QWidget):
             else None
         )
 
+        # Only offered when right-clicking a widget that's already part of
+        # a 2+ multi-selection (built up via repeated "그룹 선택") - both
+        # operate on the whole current selection, using *this* widget (the
+        # one right-clicked) as the reference/pivot other members match.
+        has_group_selection = was_already_selected and len(self._selected_ids) >= 2
+        match_size_action = (
+            menu.addAction("모든 위젯 상하좌우 크기를 동일하게 함") if has_group_selection else None
+        )
+        match_column_action = (
+            menu.addAction("모든 위젯의 열을 맞춤") if has_group_selection else None
+        )
+        spacing_action = (
+            menu.addAction("위젯 간격 지정...") if has_group_selection else None
+        )
+
         chosen = menu.exec(widget.mapToGlobal(pos))
+
+        # Selection side effect of right-clicking (requests 1/2/3 - see the
+        # comment above "그룹 선택"'s creation for the full rule).
+        self._apply_selection_click(widget_id, was_already_selected, chosen == group_select_action)
+
         if behavior_action is not None and chosen == behavior_action:
             self._open_behavior_dialog(widget_id)
         elif chosen == bring_front_action:
@@ -1310,6 +1485,145 @@ class CanvasPage(QWidget):
             self._align_containers(selected_top_level_containers, self.rect())
         elif align_children_action is not None and chosen == align_children_action:
             self._align_container_children(widget_id)
+        elif match_size_action is not None and chosen == match_size_action:
+            self._match_selected_sizes(widget_id)
+        elif match_column_action is not None and chosen == match_column_action:
+            self._match_selected_columns(widget_id)
+        elif spacing_action is not None and chosen == spacing_action:
+            self._open_group_spacing_dialog()
+
+    def _open_group_spacing_dialog(self):
+        """Prompts for a point/pixel value (request 3) and applies it as
+        the exact gap between every currently-selected widget."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("위젯 간격 지정")
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        spacing_spin = QSpinBox()
+        spacing_spin.setRange(0, 999)
+        spacing_spin.setValue(20)
+        form.addRow("간격(px)", spacing_spin)
+
+        buttons = QDialogButtonBox()
+        buttons.addButton("Yes", QDialogButtonBox.AcceptRole)
+        buttons.addButton("No", QDialogButtonBox.RejectRole)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+        self._apply_group_spacing(spacing_spin.value())
+
+    def _apply_group_spacing(self, spacing):
+        """Repositions the selected widgets (sizes untouched) so the gap
+        between horizontally/vertically adjacent members is exactly
+        `spacing` - anchored at the group's own current top-left (that
+        corner doesn't move; everything else cascades from there). Row
+        structure is inferred the same way the "정렬" feature does
+        (`layout_templates._cluster_into_rows`), but computed in shared
+        page-space so a selection spanning different containers still lines
+        up visually - each widget's final position is translated back into
+        its own actual parent's local coordinate space when applied, with
+        no reparenting involved."""
+        ids = list(self._selected_ids)
+        if len(ids) < 2:
+            return
+        widgets = [self.entries[wid]["widget"] for wid in ids]
+        page_rects = [self._page_rect(w) for w in widgets]
+        rects = [(r.x(), r.y(), r.width(), r.height()) for r in page_rects]
+
+        rows = _cluster_into_rows(rects)
+        anchor_x = min(r[0] for r in rects)
+        anchor_y = min(r[1] for r in rects)
+
+        new_page_pos = [None] * len(ids)
+        y_cursor = anchor_y
+        for row in rows:
+            row_height = max(rects[i][3] for i in row)
+            x_cursor = anchor_x
+            for i in row:
+                new_page_pos[i] = (x_cursor, y_cursor)
+                x_cursor += rects[i][2] + spacing
+            y_cursor += row_height + spacing
+
+        for i, widget in enumerate(widgets):
+            parent = widget.parentWidget()
+            local_pos = parent.mapFrom(self, QPoint(*new_page_pos[i]))
+            widget.move(local_pos)
+        self._refresh_selection_overlay()
+
+    def _apply_selection_click(self, widget_id, was_already_selected, add_to_selection):
+        """The selection side effect of right-clicking `widget_id` (requests
+        1/2/3): `add_to_selection` (the "그룹 선택" menu item was chosen)
+        adds it to whatever is already selected; otherwise, unless it was
+        already part of the current selection, the selection is replaced
+        with just this widget - the default for right-clicking anything
+        else, including dismissing the menu without picking an action.
+        Preserving an already-selected widget's group (rather than always
+        replacing) is what lets the batch actions below see the full group
+        when invoked from one of its own members."""
+        if add_to_selection:
+            self._selected_ids.add(widget_id)
+            self._refresh_selection_overlay()
+        elif not was_already_selected:
+            self._selected_ids = {widget_id}
+            self._refresh_selection_overlay()
+
+    def _match_selected_sizes(self, reference_id):
+        """Resizes every other currently-selected widget to `reference_id`'s
+        width/height (the widget the user right-clicked to invoke this
+        from). Each target is still clamped to its own container/page
+        bounds and its own resize floor (decision C for a rect_group with
+        children) - never grown past its parent's edge or shrunk below what
+        `_resize_min_size` allows, even if that means it ends up slightly
+        different from the reference in a tight fit."""
+        reference_entry = self.entries.get(reference_id)
+        if reference_entry is None:
+            return
+        reference_widget = reference_entry["widget"]
+        target_w, target_h = reference_widget.width(), reference_widget.height()
+
+        for widget_id in self._selected_ids:
+            if widget_id == reference_id:
+                continue
+            entry = self.entries.get(widget_id)
+            if entry is None:
+                continue
+            widget = entry["widget"]
+            bounds = widget.parentWidget()
+            min_w, min_h = self._resize_min_size(widget)
+            max_w = max(min_w, bounds.width() - widget.x())
+            max_h = max(min_h, bounds.height() - widget.y())
+            widget.resize(min(max(target_w, min_w), max_w), min(max(target_h, min_h), max_h))
+        self._refresh_selection_overlay()
+
+    def _match_selected_columns(self, reference_id):
+        """Left-aligns every other currently-selected widget's X to
+        `reference_id`'s X (the widget the user right-clicked to invoke
+        this from) - in shared page-space, so it lines up visually even
+        across widgets living in different containers, without reparenting
+        anything (each target's local X is derived from the reference's
+        page-space X via its own current parent)."""
+        reference_entry = self.entries.get(reference_id)
+        if reference_entry is None:
+            return
+        reference_page_x = self._page_rect(reference_entry["widget"]).x()
+
+        for widget_id in self._selected_ids:
+            if widget_id == reference_id:
+                continue
+            entry = self.entries.get(widget_id)
+            if entry is None:
+                continue
+            widget = entry["widget"]
+            bounds = widget.parentWidget()
+            local_x = bounds.mapFrom(self, QPoint(reference_page_x, 0)).x()
+            max_x = max(0, bounds.width() - widget.width())
+            widget.move(min(max(0, local_x), max_x), widget.y())
+        self._refresh_selection_overlay()
 
     def _align_containers(self, container_ids, outer_rect):
         """R5: equalizes margins among the given top-level rect_group boxes
@@ -1326,7 +1640,7 @@ class CanvasPage(QWidget):
         )
         for widget, (x, y, w, h) in zip(widgets, aligned):
             widget.setGeometry(x, y, w, h)
-        self.update()
+        self._refresh_selection_overlay()
 
     def _align_container_children(self, container_id):
         """R8: equalizes margins among one container's own children, in that
@@ -1341,13 +1655,17 @@ class CanvasPage(QWidget):
         )
         for widget, (x, y, w, h) in zip(widgets, aligned):
             widget.setGeometry(x, y, w, h)
-        self.update()
+        self._refresh_selection_overlay()
 
     def _bring_widget_to_front(self, widget_id):
         entry = self.entries.pop(widget_id, None)
         if entry is None:
             return
         entry["widget"].raise_()
+        # A no-op if the widget was nested (that only reorders it among its
+        # container's own children), but if it was top-level this just put
+        # it above the page-level selection overlay - put that back on top.
+        self._selection_overlay.raise_()
         # `entries` is iterated in insertion order by both _save_state and
         # _restore_from_state (widgets are recreated in that order, and each
         # new child paints over earlier siblings by default) - moving this
@@ -1684,9 +2002,13 @@ class CanvasWindow(QMainWindow):
         self.tabs = CanvasTabs()
         self.setCentralWidget(self.tabs)
 
-        # Crash/force-kill safety net - a clean exit already saves via
-        # closeEvent below, so this is only ever actually needed once the
-        # app *doesn't* reach that (see _check_and_offer_autosave_recovery).
+        # Crash/force-kill safety net - writes to the *separate* autosave
+        # file only (never STATE_FILE itself), purely so a later launch can
+        # offer to recover it after an unclean exit. Closing normally no
+        # longer saves to STATE_FILE either (see closeEvent) - only the
+        # explicit "틀 저장" button does that now, so this timer is the only
+        # thing standing between an in-progress edit and losing it to a
+        # crash, not a substitute for hitting "틀 저장".
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setInterval(AUTOSAVE_INTERVAL_MS)
         self._autosave_timer.timeout.connect(self._autosave)
@@ -1704,9 +2026,16 @@ class CanvasWindow(QMainWindow):
         )
 
     def closeEvent(self, event):
-        _save_state(self.tabs, window_size=(self.width(), self.height()))
-        # A clean shutdown makes the autosave file redundant (and, if left
-        # behind, would wrongly look like a crash on the next launch).
+        # Per user request (2026-08-16): closing the window no longer
+        # auto-saves to builder_state.json - only the explicit "틀 저장"
+        # button (save_template, above) does that now. Before this, closing
+        # normally (even just clicking X) silently overwrote the last good
+        # save with whatever was live in the session, including a broken/
+        # half-finished edit the user never meant to keep.
+        #
+        # The periodic autosave file is still cleaned up on a clean exit -
+        # that's unrelated to STATE_FILE, purely so the next launch doesn't
+        # wrongly treat this clean exit as a crash and offer to "recover" it.
         try:
             os.remove(AUTOSAVE_STATE_FILE)
         except OSError:
