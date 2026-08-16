@@ -63,6 +63,15 @@ TEMPLATE_SPECS = [
             {"title": "사각형 3", "rel_x": 0.67, "rel_y": 0.03, "rel_w": 0.30, "rel_h": 0.94},
         ],
     },
+    {
+        "key": "three_stacked",
+        "label": "직사각형 3개 (세로)",
+        "rects": [
+            {"title": "사각형 1", "rel_x": 0.03, "rel_y": 0.03, "rel_w": 0.94, "rel_h": 0.30},
+            {"title": "사각형 2", "rel_x": 0.03, "rel_y": 0.35, "rel_w": 0.94, "rel_h": 0.30},
+            {"title": "사각형 3", "rel_x": 0.03, "rel_y": 0.67, "rel_w": 0.94, "rel_h": 0.30},
+        ],
+    },
 ]
 
 TEMPLATE_SPECS_BY_KEY = {spec["key"]: spec for spec in TEMPLATE_SPECS}

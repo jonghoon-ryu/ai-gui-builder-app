@@ -395,6 +395,7 @@ SIGNAL_BY_KIND = {
     "urlbox": "returnPressed",
     "dirbox": "returnPressed",
     "radiobutton": "clicked",
+    "checkbox": "clicked",
 }
 
 

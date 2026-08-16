@@ -5,6 +5,7 @@ from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QThread, QTimer, Si
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QColorDialog,
     QComboBox,
     QDialog,
@@ -177,7 +178,7 @@ def _save_state(tabs_widget, window_size=None, target_file=None):
                         "anchor": entry.get("anchor"),
                         "parent_id": entry.get("parent_id"),
                         "checked": (
-                            entry["widget"].isChecked() if entry["kind"] == "radiobutton" else None
+                            entry["widget"].isChecked() if entry["kind"] in CHECKABLE_KINDS else None
                         ),
                     }
                     for widget_id, entry in tabs_widget.widget(i).entries.items()
@@ -333,6 +334,7 @@ WIDGET_FACTORIES = {
     "urlbox": _make_urlbox,
     "dirbox": _make_dirbox,
     "radiobutton": lambda parent: QRadioButton("옵션", parent),
+    "checkbox": lambda parent: QCheckBox("옵션", parent),
     "alarmclock": lambda parent: AlarmClockPanel(parent),
     "windowstatus": lambda parent: WindowStatusPanel(parent),
     "gitpanel": lambda parent: GitPanel(parent),
@@ -349,6 +351,10 @@ CONTAINER_KINDS = ("rect_group",)
 
 # Text-box-flavored kinds that share lineedit's behavior (font menu, etc.)
 TEXTBOX_KINDS = ("lineedit", "urlbox", "dirbox")
+
+# Kinds with a persisted on/off `checked` state (radiobutton also has a
+# `group` field for mutual exclusivity; checkbox is a plain independent toggle).
+CHECKABLE_KINDS = ("radiobutton", "checkbox")
 
 
 class CanvasPage(QWidget):
@@ -598,7 +604,7 @@ class CanvasPage(QWidget):
                     "no_border": entry.get("no_border", False),
                     "anchor": entry.get("anchor"),
                     "parent_id": entry.get("parent_id"),
-                    "checked": (widget.isChecked() if entry["kind"] == "radiobutton" else None),
+                    "checked": (widget.isChecked() if entry["kind"] in CHECKABLE_KINDS else None),
                 }
             )
         self._last_deleted = snapshot or None
@@ -712,7 +718,7 @@ class CanvasPage(QWidget):
                     "font_size": entry.get("font_size"),
                     "group": entry.get("group"),
                     "no_border": entry.get("no_border", False),
-                    "checked": (widget.isChecked() if entry["kind"] == "radiobutton" else None),
+                    "checked": (widget.isChecked() if entry["kind"] in CHECKABLE_KINDS else None),
                 }
             )
         _CLIPBOARD = clipboard
@@ -866,6 +872,10 @@ class CanvasPage(QWidget):
                 # First member of a brand-new group - make it the default
                 # selection so the group never starts empty.
                 widget.setChecked(True)
+        elif kind == "checkbox" and checked is not None:
+            # Independent toggle, no group/default-selection concept - just
+            # apply whatever was explicitly saved/copied.
+            widget.setChecked(checked)
 
         setattr(self, widget_id, widget)
         self.entries[widget_id] = {

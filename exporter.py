@@ -96,6 +96,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -535,6 +536,8 @@ def _create_lines(
     elif kind == "radiobutton":
         lines.append(f'self.{widget_id} = QRadioButton("옵션", {parent_var})')
         lines.append(f'self.{widget_id}.setAutoExclusive(False)')
+    elif kind == "checkbox":
+        lines.append(f'self.{widget_id} = QCheckBox("옵션", {parent_var})')
     elif kind == "alarmclock":
         # Seed the exported panel with whatever alarms exist in the builder
         # right now, instead of it always starting empty.
@@ -675,6 +678,7 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
                 group = entry.get("group") or widget_id
                 radio_groups.setdefault(group, []).append((full_id, widget.isChecked()))
             pos = widget.pos()
+            checkbox_checked = entry["kind"] == "checkbox" and widget.isChecked()
             size = widget.size()
             # Read live text (whatever the user actually typed, including
             # leading/trailing spaces) rather than a separately tracked
@@ -703,6 +707,11 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
                     live_title if entry["kind"] == "rect_group" else None,
                 )
             )
+            if checkbox_checked:
+                # No group/exclusivity concept for a checkbox (unlike
+                # radiobutton's radio_groups handling below) - just apply
+                # whatever the live builder state was directly.
+                init_lines.append(f'self.{full_id}.setChecked(True)')
 
             if entry["code"]:
                 signal_name = SIGNAL_BY_KIND[entry["kind"]]

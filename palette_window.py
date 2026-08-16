@@ -2,6 +2,7 @@ from PySide6.QtCore import Qt, QMimeData
 from PySide6.QtGui import QColor, QDrag, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -82,6 +83,10 @@ class DraggableRadioButton(DraggableMixin, QRadioButton):
     widget_kind = "radiobutton"
 
 
+class DraggableCheckBox(DraggableMixin, QCheckBox):
+    widget_kind = "checkbox"
+
+
 class DraggableTemplate(QWidget):
     """A small preview thumbnail for one `layout_templates.TEMPLATE_SPECS`
     entry - dragging it onto the canvas drops that template's `rect_group`
@@ -128,27 +133,70 @@ class PaletteWindow(QWidget):
 
         root = QHBoxLayout(self)
 
-        # Scrollable, not a bare QVBoxLayout straight on the window - with
-        # the 6 template previews added on top of the original 8 items, the
-        # palette's natural content height comfortably exceeds a typical
-        # screen's height, and the window has no explicit size of its own
-        # (main.py just calls .show()), so without this the window itself
-        # would grow taller than the screen (confirmed via screenshot while
-        # building this).
-        items_container = QWidget()
-        layout = QVBoxLayout(items_container)
-        layout.setSpacing(16)
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area.setWidget(items_container)
-        root.addWidget(scroll_area)
-
         screen = QApplication.primaryScreen()
-        if screen is not None:
-            scroll_area.setMaximumHeight(max(400, screen.availableGeometry().height() - 120))
+        max_column_height = (
+            max(400, screen.availableGeometry().height() - 120) if screen is not None else None
+        )
+
+        def make_scrollable_column():
+            """A vertically-scrollable column (own QScrollArea) - with 7
+            template previews or 9 other widgets stacked in a single
+            column, either one alone can comfortably exceed a typical
+            screen's height, and the window has no explicit size of its own
+            (main.py just calls .show()), so without this the window itself
+            would grow taller than the screen (confirmed via screenshot
+            while building this)."""
+            container = QWidget()
+            column_layout = QVBoxLayout(container)
+            column_layout.setSpacing(16)
+
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setWidget(container)
+            if max_column_height is not None:
+                scroll.setMaximumHeight(max_column_height)
+            return scroll, column_layout
+
+        def add_items(column_layout, items):
+            for index, (label_text, widget) in enumerate(items):
+                if index > 0:
+                    divider = QFrame()
+                    divider.setFrameShape(QFrame.HLine)
+                    divider.setFrameShadow(QFrame.Sunken)
+                    column_layout.addWidget(divider)
+                title_label = QLabel(label_text)
+                title_font = title_label.font()
+                title_font.setBold(True)
+                title_label.setFont(title_font)
+                # Long template labels (e.g. "템플릿: 작은 사각형 2개 + 큰
+                # 사각형 1개 (작은 것들이 위)") are wider than ITEM_WIDTH
+                # without this - unwrapped, the label forces the column
+                # wider than the window and a needless horizontal scrollbar
+                # appears.
+                title_label.setWordWrap(True)
+                title_label.setFixedWidth(ITEM_WIDTH)
+                column_layout.addWidget(title_label)
+                if widget is vline:
+                    column_layout.addWidget(widget, alignment=Qt.AlignHCenter)
+                else:
+                    column_layout.addWidget(widget)
+            column_layout.addStretch()
+
+        # Leftmost column: templates only. Middle column: every other
+        # draggable widget. Rightmost: the existing save buttons (added
+        # further below, unchanged) - three side-by-side groups as requested.
+        template_scroll, template_layout = make_scrollable_column()
+        root.addWidget(template_scroll)
+
+        left_right_divider = QFrame()
+        left_right_divider.setFrameShape(QFrame.VLine)
+        left_right_divider.setFrameShadow(QFrame.Sunken)
+        root.addWidget(left_right_divider)
+
+        items_scroll, layout = make_scrollable_column()
+        root.addWidget(items_scroll)
 
         combo = DraggableComboBox()
         combo.addItems(["옵션 1", "옵션 2", "옵션 3"])
@@ -191,11 +239,10 @@ class PaletteWindow(QWidget):
 
         radio_button = DraggableRadioButton("옵션")
 
-        template_items = [
-            ("템플릿: " + spec["label"], DraggableTemplate(spec)) for spec in TEMPLATE_SPECS
-        ]
+        checkbox = DraggableCheckBox("옵션")
 
-        for index, (label_text, widget) in enumerate(
+        add_items(
+            layout,
             [
                 ("드롭박스", combo),
                 ("누름 버튼", button),
@@ -203,38 +250,21 @@ class PaletteWindow(QWidget):
                 ("URL 입력창", url_box),
                 ("디렉토리 입력창", dir_box),
                 ("라디오 버튼", radio_button),
+                ("체크 박스", checkbox),
                 ("가로선", hline),
                 ("세로선", vline),
-                *template_items,
-            ]
-        ):
-            if index > 0:
-                divider = QFrame()
-                divider.setFrameShape(QFrame.HLine)
-                divider.setFrameShadow(QFrame.Sunken)
-                layout.addWidget(divider)
-            title_label = QLabel(label_text)
-            title_font = title_label.font()
-            title_font.setBold(True)
-            title_label.setFont(title_font)
-            # Long template labels (e.g. "템플릿: 작은 사각형 2개 + 큰 사각형
-            # 1개 (작은 것들이 위)") are wider than ITEM_WIDTH without this -
-            # unwrapped, the label forces the whole scroll area wider than
-            # the window and a needless horizontal scrollbar appears.
-            title_label.setWordWrap(True)
-            title_label.setFixedWidth(ITEM_WIDTH)
-            layout.addWidget(title_label)
-            if widget is vline:
-                layout.addWidget(widget, alignment=Qt.AlignHCenter)
-            else:
-                layout.addWidget(widget)
+            ],
+        )
 
-        layout.addStretch()
+        template_items = [
+            ("템플릿: " + spec["label"], DraggableTemplate(spec)) for spec in TEMPLATE_SPECS
+        ]
+        add_items(template_layout, template_items)
 
-        vertical_divider = QFrame()
-        vertical_divider.setFrameShape(QFrame.VLine)
-        vertical_divider.setFrameShadow(QFrame.Sunken)
-        root.addWidget(vertical_divider)
+        middle_right_divider = QFrame()
+        middle_right_divider.setFrameShape(QFrame.VLine)
+        middle_right_divider.setFrameShadow(QFrame.Sunken)
+        root.addWidget(middle_right_divider)
 
         save_col = QVBoxLayout()
         root.addLayout(save_col)
