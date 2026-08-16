@@ -4,3 +4,4 @@ __pycache__/
 .claude/
 standalone/
 builder_state.autosave.json
+*.exe

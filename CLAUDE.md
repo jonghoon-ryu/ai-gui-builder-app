@@ -7,8 +7,8 @@
 사용자가 지시하는 작업은 진행할지 묻지 말고 바로 실행한다. 단, 되돌리기 힘든 파괴적인 작업(예: 파일/브랜치
 삭제, 강제 push 등)은 여전히 신중하게 판단한다.
 
-**빌더 앱 자체의 창 크기(`builder_state.json`의 `window.width`/`window.height`)는 사용자가 직접
-요청하지 않는 한 절대 바꾸지 않는다.** 새 위젯을 추가하거나 배치하다가 지금 창 크기로는 자리가
+**빌더 앱 자체의 창 크기(`builder_framework/default/builder_state.json`의 `window.width`/
+`window.height`)는 사용자가 직접 요청하지 않는 한 절대 바꾸지 않는다.** 새 위젯을 추가하거나 배치하다가 지금 창 크기로는 자리가
 부족하더라도, 창을 넓히지 말고 위젯 크기/배치를 조정해서 기존 창 크기 안에 맞춘다. 창 크기 자체를
 바꾸는 건 오직 사용자가 그걸 명시적으로 요청했을 때만 한다.
 
@@ -36,11 +36,12 @@
    기능을 추가/변경할 때 이 목적에서 벗어나 불필요하게 복잡해지지 않도록 한다.
 
 2. **참고용 기본 예제 제공** — 사용자가 참고할 수 있는 기본 예제(간단한 위젯 + 동작 조합)를 제공한다.
-   `executable_py/2026_07_26/app.py`가 내보내기 결과물의 예시로 남아 있고, 실제로는 빌더를 실행하면
-   `builder_state.json`에 저장된 실사용 탭 구성(git/wiki/윈도우 현황/alarm/쉬었다 합시다)이 그대로
-   화면에 뜨기 때문에 사용자가 바로 참고할 수 있는 상태다. 다만 이건 실사용 데이터가 쌓인 것이지
-   교육용으로 정리된 최소 예제는 아니다. 예제를 추가/수정할 때는 실제로 동작하는 최소 예제(위젯 1~2개 +
-   자연어로 만든 동작)를 유지한다.
+   `examples/website_link_button/app.py`(2026-08-16부터, 예전 `executable_py/2026_07_26/app.py`를
+   옮긴 것)가 내보내기 결과물의 예시로 남아 있고, 실제로는 빌더를 실행하면 `builder_framework/
+   default/builder_state.json`에 저장된 실사용 탭 구성(gvf/git/wiki/윈도우 현황/alarm/link/설명)이
+   그대로 화면에 뜨기 때문에 사용자가 바로 참고할 수 있는 상태다. 다만 이건 실사용 데이터가 쌓인
+   것이지 교육용으로 정리된 최소 예제는 아니다. 예제를 추가/수정할 때는 실제로 동작하는 최소 예제
+   (위젯 1~2개 + 자연어로 만든 동작)를 유지한다.
 
 3. **독립 실행(standalone) 내보내기** — 사용자가 빌더로 만든 툴은 빌더나 `claude` CLI 없이도 단독으로
    실행 가능해야 하며, 사용자가 원하는 위치에 파일로 저장할 수 있어야 한다. 이미 `exporter.py`
@@ -83,7 +84,8 @@ venv\Scripts\pythonw.exe main.py
 | `theme.py` | 빌더 창(캔버스/팔레트)에 적용하는 앱 전역 QSS. `main.py`에서 `QApplication.setStyleSheet`로 적용. standalone 내보내기에도 항상 함께 포함됨 |
 | `tab_bar.py` | 탭바 구현 (`ColorTabBar`: 둥근 모서리, 탭별 색깔, 선택된 탭 볼드). 빌더/standalone 양쪽에서 같은 소스 파일 그대로 사용 |
 | `md_files/` | 문서(`how_to_use.md`, `tool_requirement.md`) 모음 |
-| `executable_py/` | "실행 py 저장" 버튼을 누르면 저장 다이얼로그가 기본으로 여기서 시작한다. 내보낸 `.py` 결과물들을 날짜별 하위 폴더로 정리해 모아두는 곳 (예: `executable_py/2026_07_26/app.py`) |
-| `standalone/` | "standalone 실행 파일 저장"(.exe) 버튼을 누르면 저장 다이얼로그가 기본으로 여기서 시작한다 |
+| `builder_framework/default/` | "틀 저장"이 쓰는 `builder_state.json`(2026-08-16부터 저장소 루트에서 이 위치로 옮김, 앱 시작 시 자동 로드되는 그 파일)이 있는 곳. "실행 py 저장"/"standalone 실행 파일 저장" 저장창도 기본으로 여기서 시작해서, 한 "틀"에서 나온 상태 파일과 내보낸 결과물이 한곳에 모인다 |
+| `builder_framework/<이름>/` | "다른 이름으로 틀 저장"으로 만든, `default`와 같은 구조의 이름 붙은 틀들 |
+| `examples/website_link_button/app.py` | 참고용 최소 예제(버튼 1개로 URL 열기). 2026-08-16에 `executable_py/2026_07_26/app.py`에서 옮김 — `executable_py/`/`standalone/`(2026-08-16 이전 내보내기 결과물이 쌓이던 예전 위치)는 이 파일만 옮긴 뒤 정리함, 저장 다이얼로그는 더 이상 여기서 시작하지 않음 |
 
 자세한 내용(생성 코드가 쓸 수 있는 함수, 위젯 간 참조 방법 등)은 `md_files/how_to_use.md`를 참고한다.

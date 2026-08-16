@@ -509,11 +509,13 @@ def show_text_dialog(parent, title, text):
 
 
 def pick_startup_file(parent):
-    standalone_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "standalone")
+    builder_framework_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "builder_framework"
+    )
     path, _ = QFileDialog.getOpenFileName(
         parent,
         "시작 프로그램에 등록/삭제할 파일 선택",
-        standalone_dir,
+        builder_framework_dir,
         "실행 파일 (*.exe);;모든 파일 (*.*)",
     )
     return path or None

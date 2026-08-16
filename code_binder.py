@@ -433,13 +433,18 @@ def show_text_dialog(parent, title, text):
 
 
 def pick_startup_file(parent):
-    """Opens a file picker starting in this app's `standalone` export
-    folder. Returns the chosen path, or None if the user canceled."""
-    standalone_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "standalone")
+    """Opens a file picker starting in `builder_framework/` (2026-08-16:
+    the old fixed `standalone/` export folder is gone - exports now land in
+    whichever `builder_framework/<이름>/` the user picked, so this just
+    starts one level up from all of them instead of guessing which one).
+    Returns the chosen path, or None if the user canceled."""
+    builder_framework_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "builder_framework"
+    )
     path, _ = QFileDialog.getOpenFileName(
         parent,
         "시작 프로그램에 등록/삭제할 파일 선택",
-        standalone_dir,
+        builder_framework_dir,
         "실행 파일 (*.exe);;모든 파일 (*.*)",
     )
     return path or None
