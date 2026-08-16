@@ -138,7 +138,13 @@ class DraggableTemplate(QWidget):
 
 
 class PaletteWindow(QWidget):
-    def __init__(self, canvas_window=None):
+    def __init__(self, canvas_window=None, initial_size=None):
+        """`initial_size`, when given, is a `{"width": int, "height": int}`
+        dict (the "palette" key from a loaded 틀's builder_state.json,
+        looked up by main.py before this constructor runs) - overrides
+        DEFAULT_WIDTH/DEFAULT_HEIGHT so the palette starts at whatever size
+        the user last left it saved at, the same way the canvas window
+        already does for its own size."""
         super().__init__()
         self.setWindowTitle("위젯 팔레트")
         self._canvas_window = canvas_window
@@ -295,28 +301,66 @@ class PaletteWindow(QWidget):
 
         add_vertical_divider()
 
+        def add_save_col_divider():
+            """Group separator inside the save-buttons column - same Sunken
+            HLine style as the separators `add_items` draws between palette
+            entries, so it reads as part of the same visual language rather
+            than a new one-off style."""
+            divider = QFrame()
+            divider.setFrameShape(QFrame.HLine)
+            divider.setFrameShadow(QFrame.Sunken)
+            divider.setFixedWidth(ITEM_WIDTH)
+            save_col.addSpacing(14)
+            save_col.addWidget(divider)
+            save_col.addSpacing(14)
+
         save_col = QVBoxLayout()
         root.addLayout(save_col)
 
         save_col.addStretch()
 
+        # Group 1: saving/loading a 틀.
         template_save_button = QPushButton("틀 저장")
         template_save_button.clicked.connect(self._on_template_save_clicked)
         template_save_button.setFixedWidth(ITEM_WIDTH)
         save_col.addWidget(template_save_button)
 
-        save_col.addSpacing(30)
+        save_col.addSpacing(20)
 
+        layout_save_as_button = QPushButton("다른 이름으로 틀 저장")
+        layout_save_as_button.clicked.connect(self._on_layout_save_as_clicked)
+        layout_save_as_button.setFixedWidth(ITEM_WIDTH)
+        save_col.addWidget(layout_save_as_button)
+
+        save_col.addSpacing(20)
+
+        layout_load_button = QPushButton("저장된 틀 불러오기")
+        layout_load_button.clicked.connect(self._on_layout_load_clicked)
+        layout_load_button.setFixedWidth(ITEM_WIDTH)
+        save_col.addWidget(layout_load_button)
+
+        add_save_col_divider()
+
+        # Group 2: starting over.
+        new_layout_button = QPushButton("새 틀 시작하기")
+        new_layout_button.clicked.connect(self._on_new_layout_clicked)
+        new_layout_button.setFixedWidth(ITEM_WIDTH)
+        save_col.addWidget(new_layout_button)
+
+        add_save_col_divider()
+
+        # Group 3: exporting a standalone copy.
         standalone_save_button = QPushButton("실행 py 저장")
         standalone_save_button.clicked.connect(self._on_standalone_save_clicked)
         standalone_save_button.setFixedWidth(ITEM_WIDTH)
         save_col.addWidget(standalone_save_button)
 
-        save_col.addSpacing(30)
+        save_col.addSpacing(20)
 
-        exe_save_button = QPushButton("standalone 실행 파일 저장")
+        exe_save_button = QPushButton("standalone\n실행 파일 저장")
         exe_save_button.clicked.connect(self._on_exe_save_clicked)
         exe_save_button.setFixedWidth(ITEM_WIDTH)
+        exe_save_button.setFixedHeight(70)
         save_col.addWidget(exe_save_button)
         self._exe_save_button = exe_save_button
 
@@ -333,12 +377,40 @@ class PaletteWindow(QWidget):
         # window without also permanently pinning minimumHeight - which
         # previously disabled the window's own edge-drag resize, since Qt
         # disables resize on any axis where minimumHeight==maximumHeight).
+        width = DEFAULT_WIDTH
+        height = DEFAULT_HEIGHT
+        if initial_size:
+            width = initial_size.get("width", DEFAULT_WIDTH)
+            height = initial_size.get("height", DEFAULT_HEIGHT)
+        self.resize(width, height)
+
+    def reset_to_default_size(self):
+        """'새 틀 시작하기' resets the palette back to this - a plain
+        `resize()` call works fine here (unlike the __init__ dance above,
+        which only exists to work around sizeHint() before the window has
+        ever been shown); once shown, resize() just directly sets the
+        geometry."""
         self.resize(DEFAULT_WIDTH, DEFAULT_HEIGHT)
 
     def _on_template_save_clicked(self):
         if self._canvas_window is None:
             return
         self._canvas_window.save_template()
+
+    def _on_layout_save_as_clicked(self):
+        if self._canvas_window is None:
+            return
+        self._canvas_window.save_layout_as()
+
+    def _on_layout_load_clicked(self):
+        if self._canvas_window is None:
+            return
+        self._canvas_window.load_layout_dialog()
+
+    def _on_new_layout_clicked(self):
+        if self._canvas_window is None:
+            return
+        self._canvas_window.start_new_layout()
 
     def _on_standalone_save_clicked(self):
         if self._canvas_window is None:

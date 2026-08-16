@@ -41,7 +41,8 @@ def main():
     canvas.move(100, 100)
     canvas.show()
 
-    palette = PaletteWindow(canvas_window=canvas)
+    palette = PaletteWindow(canvas_window=canvas, initial_size=canvas.tabs.loaded_palette_size)
+    canvas.palette_window = palette
     palette.show()
     app.processEvents()
     palette.move(canvas.frameGeometry().right() + 1, canvas.frameGeometry().top())

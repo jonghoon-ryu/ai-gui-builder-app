@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
@@ -30,6 +31,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import alarm_widget
+import git_widget
+import gvf_widget
 from alarm_widget import AlarmClockPanel
 from git_widget import GitPanel
 from gvf_widget import FpgaAcquisitionPanel, FpgaLoadingPanel, GvfPanel
@@ -42,15 +46,21 @@ from palette_window import WIDGET_KIND_MIME, WIDGET_TEMPLATE_MIME
 from tab_bar import ColorTabBar
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATE_FILE = os.path.join(BASE_DIR, "builder_state.json")
+# Every "틀" (layout) - the single default one "틀 저장" always overwrites,
+# plus any number of named ones from "다른 이름으로 틀 저장" - lives in its own
+# subfolder here, holding that 틀's builder_state.json *and* whatever
+# "실행 py 저장"/"standalone 실행 파일 저장" export from it, so everything
+# belonging to one 틀 stays together instead of scattered across separate
+# executable_py//standalone/ trees.
+BUILDER_FRAMEWORK_DIR = os.path.join(BASE_DIR, "builder_framework")
+DEFAULT_LAYOUT_DIR = os.path.join(BUILDER_FRAMEWORK_DIR, "default")
+STATE_FILE = os.path.join(DEFAULT_LAYOUT_DIR, "builder_state.json")
 # Written every AUTOSAVE_INTERVAL_MS while the app runs, and deleted again on
 # a clean shutdown (see CanvasWindow.closeEvent) - if this file is still
 # around at the *next* startup, the previous run didn't exit cleanly (crash/
 # force-kill), so its contents may be newer than the last real save.
 AUTOSAVE_STATE_FILE = os.path.join(BASE_DIR, "builder_state.autosave.json")
 AUTOSAVE_INTERVAL_MS = 90_000
-EXECUTABLE_PY_DIR = os.path.join(BASE_DIR, "executable_py")
-STANDALONE_DIR = os.path.join(BASE_DIR, "standalone")
 
 # Module-level (not per-tab) so copy/paste also works across tabs.
 _CLIPBOARD = []
@@ -141,7 +151,7 @@ def _apply_scoped_background(widget, color_hex):
     widget.setStyleSheet(f"#{object_name} {{ background-color: {color_hex}; }}")
 
 
-def _save_state(tabs_widget, window_size=None, target_file=None):
+def _save_state(tabs_widget, window_size=None, target_file=None, palette_size=None):
     target_file = target_file or STATE_FILE
     if window_size is None:
         # Preserve whatever window size was last saved instead of wiping it out.
@@ -150,9 +160,16 @@ def _save_state(tabs_widget, window_size=None, target_file=None):
     else:
         window_size = {"width": window_size[0], "height": window_size[1]}
 
+    if palette_size is None:
+        previous = _load_state()
+        palette_size = previous.get("palette") if previous else None
+    else:
+        palette_size = {"width": palette_size[0], "height": palette_size[1]}
+
     tab_bar = tabs_widget.tabBar()
     data = {
         "window": window_size,
+        "palette": palette_size,
         "tabs": [
             {
                 "title": tabs_widget.tabText(i),
@@ -187,6 +204,7 @@ def _save_state(tabs_widget, window_size=None, target_file=None):
             for i in range(tabs_widget.count())
         ]
     }
+    os.makedirs(os.path.dirname(target_file), exist_ok=True)
     with open(target_file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -199,6 +217,52 @@ def _load_state():
             return json.load(f)
     except (OSError, ValueError):
         return None
+
+
+def _load_state_file(path):
+    """Like `_load_state`, but for an arbitrary path - used to load a named
+    틀's builder_state.json from its own `BUILDER_FRAMEWORK_DIR/<name>/`
+    folder instead of the single default `STATE_FILE` slot."""
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _named_layout_dir(name):
+    return os.path.join(BUILDER_FRAMEWORK_DIR, name)
+
+
+def _named_layout_state_path(name):
+    return os.path.join(_named_layout_dir(name), "builder_state.json")
+
+
+def _apply_active_layout_state_dir(path):
+    """Points the alarm/git/gvf special-widget panels' own saved-state
+    files at `path` (a BUILDER_FRAMEWORK_DIR/<이름>/ folder) - without this
+    they'd always read/write a single fixed appData/ next to this repo,
+    shared across every 틀 regardless of which one is active. Must be
+    called *before* any of those panels are (re)constructed for the new
+    path to actually take effect for them (see each call site)."""
+    alarm_widget.set_state_dir(path)
+    git_widget.set_state_dir(path)
+    gvf_widget.set_state_dir(path)
+
+
+def _copy_app_data_snapshot(src_layout_dir, dest_layout_dir):
+    """다른 이름으로 틀 저장: brings the alarm/git/gvf panels' *current*
+    saved data along into the newly named 틀's folder (a full snapshot,
+    matching how the canvas/palette state itself is fully captured at
+    save-as time) rather than starting that data from empty and only
+    picking up future edits. No-op if the source has no appData/ yet."""
+    src_app_data = os.path.join(src_layout_dir, "appData")
+    if not os.path.isdir(src_app_data):
+        return
+    dest_app_data = os.path.join(dest_layout_dir, "appData")
+    shutil.copytree(src_app_data, dest_app_data, dirs_exist_ok=True)
 
 
 def _check_and_offer_autosave_recovery():
@@ -2013,6 +2077,10 @@ class CanvasTabs(QTabWidget):
         self.tabBar().customContextMenuRequested.connect(self._on_tab_context_menu)
 
         state = _check_and_offer_autosave_recovery() or _load_state()
+        # Read by main.py right after this constructor returns, to size the
+        # palette window to match (PaletteWindow doesn't - and shouldn't -
+        # import anything from this module, so main.py bridges the two).
+        self.loaded_palette_size = state.get("palette") if state else None
         if state and state.get("tabs"):
             self._restore_from_state(state)
         else:
@@ -2060,6 +2128,25 @@ class CanvasTabs(QTabWidget):
             self._tab_counter += 1
 
         self.setCurrentIndex(0)
+
+    def load_state(self, state):
+        """Replaces every current tab with the ones from `state` (used by
+        "저장된 틀 불러오기") - unlike `_restore_from_state` (append-only,
+        only ever called once on a fresh, empty `CanvasTabs` at startup),
+        this first tears down whatever's currently open. `deleteLater()`
+        (not an immediate delete) matches `_delete_tab`'s existing pattern -
+        safe to call while still inside a signal handler triggered by a
+        button on one of these very pages."""
+        while self.count():
+            widget = self.widget(0)
+            self.removeTab(0)
+            widget.deleteLater()
+            self.tabBar().remove_tab_color(0)
+        self._tab_counter = 0
+        if state and state.get("tabs"):
+            self._restore_from_state(state)
+        else:
+            self.add_new_tab()
 
     def add_new_tab(self):
         self._tab_counter += 1
@@ -2167,34 +2254,217 @@ class _ExeBuildWorker(QThread):
 class CanvasWindow(QMainWindow):
     def __init__(self, width_px, height_px):
         super().__init__()
-        self.setWindowTitle("나만의 tool")
         self.resize(width_px, height_px)
+
+        # Must happen before CanvasTabs() below - startup always restores
+        # from (and the active 틀 always starts as) "default", and any
+        # alarm/git/gvf panel it restores reads its saved state at
+        # construction time.
+        _apply_active_layout_state_dir(DEFAULT_LAYOUT_DIR)
 
         self.tabs = CanvasTabs()
         self.setCentralWidget(self.tabs)
+        # Set by main.py right after both windows exist - lets save_template/
+        # save_layout_as/start_new_layout read or reset the palette's size
+        # without palette_window.py needing to import anything from here
+        # (avoids a circular import; main.py is the natural place to wire
+        # two independently-constructed top-level windows together).
+        self.palette_window = None
+
+        # Which BUILDER_FRAMEWORK_DIR/<name>/ folder edits currently target -
+        # starts at "default" (what auto-loads at startup) and is updated by
+        # save_layout_as/load_layout_dialog (to whatever was just saved-to/
+        # loaded-from) and reset by start_new_layout. "틀 저장" and the
+        # export dialogs all read/write through this, not a fixed path, so
+        # every edit (canvas *and* palette) ends up in the folder the user is
+        # actually working in rather than always "default".
+        self._active_layout_name = "default"
+        self._active_layout_dir = DEFAULT_LAYOUT_DIR
+        self._update_window_title()
 
         # Crash/force-kill safety net - writes to the *separate* autosave
-        # file only (never STATE_FILE itself), purely so a later launch can
-        # offer to recover it after an unclean exit. Closing normally no
-        # longer saves to STATE_FILE either (see closeEvent) - only the
-        # explicit "틀 저장" button does that now, so this timer is the only
-        # thing standing between an in-progress edit and losing it to a
-        # crash, not a substitute for hitting "틀 저장".
+        # file only (never the active 틀's builder_state.json itself),
+        # purely so a later launch can offer to recover it after an unclean
+        # exit. Deliberately independent of which 틀 is active (see
+        # _active_layout_dir above) - it just protects whatever was live on
+        # screen, regardless of where it would eventually be saved. Closing
+        # normally no longer saves to builder_state.json either (see
+        # closeEvent) - only the explicit "틀 저장" button does that now, so
+        # this timer is the only thing standing between an in-progress edit
+        # and losing it to a crash, not a substitute for hitting "틀 저장".
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setInterval(AUTOSAVE_INTERVAL_MS)
         self._autosave_timer.timeout.connect(self._autosave)
         self._autosave_timer.start()
 
+    def _update_window_title(self):
+        self.setWindowTitle(f"나만의 tool - {self._active_layout_name}")
+
+    def _active_state_file(self):
+        return os.path.join(self._active_layout_dir, "builder_state.json")
+
+    def _current_palette_size(self):
+        if self.palette_window is None:
+            return None
+        return (self.palette_window.width(), self.palette_window.height())
+
     def _autosave(self):
         _save_state(
-            self.tabs, window_size=(self.width(), self.height()), target_file=AUTOSAVE_STATE_FILE
+            self.tabs,
+            window_size=(self.width(), self.height()),
+            target_file=AUTOSAVE_STATE_FILE,
+            palette_size=self._current_palette_size(),
         )
 
     def save_template(self):
-        _save_state(self.tabs, window_size=(self.width(), self.height()))
-        QMessageBox.information(
-            self, "틀 저장 완료", f"지금까지 만든 탭/위젯 구성을 저장했습니다.\n({STATE_FILE})"
+        target_file = self._active_state_file()
+        _save_state(
+            self.tabs,
+            window_size=(self.width(), self.height()),
+            target_file=target_file,
+            palette_size=self._current_palette_size(),
         )
+        QMessageBox.information(
+            self, "틀 저장 완료",
+            f"'{self._active_layout_name}' 틀에 지금까지 만든 탭/위젯 구성을 저장했습니다.\n({target_file})",
+        )
+
+    def save_layout_as(self):
+        """Snapshots the current tabs/widgets (and the palette's current
+        size) under a name of the user's choosing, into its own
+        `BUILDER_FRAMEWORK_DIR/<name>/` folder - separate from, and never
+        overwriting, the "default" one "틀 저장" always writes (the only one
+        auto-loaded on startup). Lets more than one "틀" exist at once,
+        browsable later via `load_layout_dialog`. The folder itself (pick an
+        existing one, or use the dialog's "새 폴더" button to make one) is
+        chosen via a real folder picker rooted at BUILDER_FRAMEWORK_DIR - the
+        folder's name becomes the 틀's name, so it must be a direct child of
+        BUILDER_FRAMEWORK_DIR (not nested deeper, not outside it)."""
+        os.makedirs(BUILDER_FRAMEWORK_DIR, exist_ok=True)
+        chosen_dir = QFileDialog.getExistingDirectory(
+            self, "다른 이름으로 틀 저장 - 폴더 선택/새로 만들기", BUILDER_FRAMEWORK_DIR
+        )
+        if not chosen_dir:
+            return
+        chosen_dir = os.path.normpath(chosen_dir)
+        if os.path.dirname(chosen_dir) != os.path.normpath(BUILDER_FRAMEWORK_DIR):
+            QMessageBox.warning(
+                self, "알림",
+                "builder_framework 폴더 바로 밑에 있는 폴더만 선택할 수 있습니다.",
+            )
+            return
+        safe_name = os.path.basename(chosen_dir)
+        if safe_name.lower() == "default":
+            QMessageBox.warning(
+                self, "알림", "'default'는 틀 저장 전용 이름이라 다른 이름을 써야 합니다."
+            )
+            return
+
+        target_path = os.path.join(chosen_dir, "builder_state.json")
+        if os.path.exists(target_path):
+            reply = QMessageBox.question(
+                self,
+                "덮어쓰기 확인",
+                f"'{safe_name}' 이름으로 이미 저장된 틀이 있습니다. 덮어쓸까요?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+        _save_state(
+            self.tabs,
+            window_size=(self.width(), self.height()),
+            target_file=target_path,
+            palette_size=self._current_palette_size(),
+        )
+        # Bring the alarm/git/gvf panels' *current* saved data along too
+        # (full snapshot, like the canvas/palette state above) - must run
+        # before switching the active dir below, while self._active_layout_dir
+        # still points at the OLD (source) folder.
+        _copy_app_data_snapshot(self._active_layout_dir, chosen_dir)
+        # From here on, "틀 저장" and the export dialogs target this folder
+        # too (Save-As semantics: subsequent saves follow where you just
+        # saved to) - until "저장된 틀 불러오기" or "새 틀 시작하기" changes
+        # it again. Same for the alarm/git/gvf panels' own save location.
+        self._active_layout_name = safe_name
+        self._active_layout_dir = chosen_dir
+        _apply_active_layout_state_dir(chosen_dir)
+        self._update_window_title()
+        QMessageBox.information(self, "저장 완료", f"'{safe_name}' 이름으로 저장했습니다.")
+
+    def load_layout_dialog(self):
+        """Replaces the current tabs with a previously saved 틀 (from
+        `BUILDER_FRAMEWORK_DIR/<name>/`, "default" included), and resizes
+        the palette to match if that 틀 was saved with a palette size. Also
+        makes that 틀's folder the active one, so "틀 저장" and the export
+        dialogs from here on target where this was loaded from - if the user
+        wants it to be what auto-loads at the *next app startup*, they still
+        need to load/save "default" specifically (startup always reads
+        default/, regardless of which 틀 was active when the app closed)."""
+        os.makedirs(BUILDER_FRAMEWORK_DIR, exist_ok=True)
+        names = sorted(
+            entry
+            for entry in os.listdir(BUILDER_FRAMEWORK_DIR)
+            if os.path.exists(_named_layout_state_path(entry))
+        )
+        if not names:
+            QMessageBox.information(
+                self, "불러오기", "저장된 틀이 없습니다. 먼저 '다른 이름으로 틀 저장'으로 저장해두세요."
+            )
+            return
+
+        name, ok = QInputDialog.getItem(
+            self, "저장된 틀 불러오기", "불러올 틀을 선택하세요:", names, 0, False
+        )
+        if not ok or not name:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "불러오기 확인",
+            "지금 화면의 내용은 '틀 저장'을 누르지 않았다면 사라집니다. 계속할까요?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        state = _load_state_file(_named_layout_state_path(name))
+        if state is None:
+            QMessageBox.critical(self, "불러오기 실패", "저장된 틀 파일을 읽을 수 없습니다.")
+            return
+        # Before rebuilding tabs/widgets below - any alarm/git/gvf panel
+        # among them reads its saved state at construction time, so this
+        # must already point at the loaded 틀's own folder by then.
+        _apply_active_layout_state_dir(_named_layout_dir(name))
+        self.tabs.load_state(state)
+        palette_size = state.get("palette")
+        if palette_size and self.palette_window is not None:
+            self.palette_window.resize(palette_size["width"], palette_size["height"])
+        self._active_layout_name = name
+        self._active_layout_dir = _named_layout_dir(name)
+        self._update_window_title()
+
+    def start_new_layout(self):
+        """'새 틀 시작하기' - resets the canvas back to a single blank tab,
+        the palette back to its own default size, and the active 틀 back to
+        "default", for starting completely from scratch. Doesn't touch any
+        saved 틀 on disk (not even the default one) - only takes effect once
+        the user explicitly saves again."""
+        reply = QMessageBox.question(
+            self,
+            "새 틀 시작하기",
+            "지금 화면 내용은 저장하지 않았다면 사라집니다. 새 틀을 시작할까요?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        _apply_active_layout_state_dir(DEFAULT_LAYOUT_DIR)
+        self.tabs.load_state(None)
+        if self.palette_window is not None:
+            self.palette_window.reset_to_default_size()
+        self._active_layout_name = "default"
+        self._active_layout_dir = DEFAULT_LAYOUT_DIR
+        self._update_window_title()
 
     def closeEvent(self, event):
         # Per user request (2026-08-16): closing the window no longer
@@ -2214,11 +2484,11 @@ class CanvasWindow(QMainWindow):
         super().closeEvent(event)
 
     def export_dialog(self):
-        os.makedirs(EXECUTABLE_PY_DIR, exist_ok=True)
+        os.makedirs(self._active_layout_dir, exist_ok=True)
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "독립 실행 앱으로 내보내기",
-            os.path.join(EXECUTABLE_PY_DIR, "app.py"),
+            os.path.join(self._active_layout_dir, "app.py"),
             "Python Files (*.py)",
         )
         if not file_path:
@@ -2248,11 +2518,11 @@ class CanvasWindow(QMainWindow):
         )
 
     def export_exe_dialog(self, trigger_button=None):
-        os.makedirs(STANDALONE_DIR, exist_ok=True)
+        os.makedirs(self._active_layout_dir, exist_ok=True)
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "독립 실행 파일(.exe)로 내보내기",
-            os.path.join(STANDALONE_DIR, "ai_tools.exe"),
+            os.path.join(self._active_layout_dir, "ai_tools.exe"),
             "Executable Files (*.exe)",
         )
         if not file_path:
@@ -2294,7 +2564,10 @@ class CanvasWindow(QMainWindow):
     def _on_exe_build_finished(self, trigger_button, dest_path=None, error=None):
         if trigger_button is not None:
             trigger_button.setEnabled(True)
-            trigger_button.setText("standalone 실행 파일 저장")
+            # Must match the two-line label palette_window.py's exe_save_button
+            # is created with, or it'd collapse back to one line (and its
+            # setFixedHeight) once a build finishes.
+            trigger_button.setText("standalone\n실행 파일 저장")
         if error is not None:
             QMessageBox.critical(self, "빌드 실패", error)
             return

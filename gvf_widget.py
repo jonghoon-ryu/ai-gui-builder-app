@@ -63,6 +63,18 @@ def _save_gvf_state(data):
         pass
 
 
+def set_state_dir(path):
+    """Redirects where gvf tab state is read/written - called by
+    canvas_window.py whenever the active 틀 changes, so this data follows
+    whichever builder_framework/<이름>/ is currently active instead of
+    always sitting next to this .py file. Never called for a
+    standalone-exported app (no concept of "틀" there)."""
+    global _STATE_DIR, _APP_DATA_DIR, GVF_STATE_FILE
+    _STATE_DIR = path
+    _APP_DATA_DIR = os.path.join(_STATE_DIR, "appData")
+    GVF_STATE_FILE = os.path.join(_APP_DATA_DIR, "gvf_state.json")
+
+
 def _update_gvf_state(key, value):
     """Read-modify-write a single top-level key so saving one panel's data
     (GvfPanel/FpgaAcquisitionPanel/FpgaLoadingPanel each own a distinct key)

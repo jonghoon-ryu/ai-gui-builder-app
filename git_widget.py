@@ -92,6 +92,20 @@ def _migrate_legacy_git_panel_state():
         pass
 
 
+def set_state_dir(path):
+    """Redirects where the git panel's 6 remote/local pairs are read/written
+    - called by canvas_window.py whenever the active 틀 changes, so this
+    data follows whichever builder_framework/<이름>/ is currently active
+    instead of always sitting next to this .py file. Never called for a
+    standalone-exported app (no concept of "틀" there)."""
+    global _STATE_DIR, _APP_DATA_DIR, GIT_PANEL_STATE_FILE, _LEGACY_GIT_PANEL_STATE_FILE
+    _STATE_DIR = path
+    _APP_DATA_DIR = os.path.join(_STATE_DIR, "appData")
+    GIT_PANEL_STATE_FILE = os.path.join(_APP_DATA_DIR, "git_panel_state.json")
+    _LEGACY_GIT_PANEL_STATE_FILE = os.path.join(_STATE_DIR, "git_panel_state.json")
+    _migrate_legacy_git_panel_state()
+
+
 _migrate_legacy_git_panel_state()
 
 

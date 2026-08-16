@@ -64,6 +64,22 @@ def _migrate_legacy_alarm_state():
         pass
 
 
+def set_state_dir(path):
+    """Redirects where alarm state is read/written - called by
+    canvas_window.py whenever the active 틀 changes (다른 이름으로 틀 저장/
+    저장된 틀 불러오기/새 틀 시작하기), so alarm data follows whichever
+    builder_framework/<이름>/ is currently active instead of always sitting
+    next to this .py file. Never called for a standalone-exported app (no
+    concept of "틀" there), which keeps using the frozen/script-relative
+    default computed above."""
+    global _STATE_DIR, _APP_DATA_DIR, ALARM_STATE_FILE, _LEGACY_ALARM_STATE_FILE
+    _STATE_DIR = path
+    _APP_DATA_DIR = os.path.join(_STATE_DIR, "appData")
+    ALARM_STATE_FILE = os.path.join(_APP_DATA_DIR, "alarm_state.json")
+    _LEGACY_ALARM_STATE_FILE = os.path.join(_STATE_DIR, "alarm_state.json")
+    _migrate_legacy_alarm_state()
+
+
 _migrate_legacy_alarm_state()
 
 
