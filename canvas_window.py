@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QFontDialog,
     QFormLayout,
     QFrame,
+    QGroupBox,
     QInputDialog,
     QLineEdit,
     QMainWindow,
@@ -35,7 +36,8 @@ from window_status_widget import WindowStatusPanel
 from behavior_dialog import BehaviorDialog
 from code_binder import SIGNAL_BY_KIND, HandlerCompileError, bind_handler, compile_handler
 from exporter import build_exe, export_to_file
-from palette_window import WIDGET_KIND_MIME
+from layout_templates import TEMPLATE_SPECS_BY_KEY
+from palette_window import WIDGET_KIND_MIME, WIDGET_TEMPLATE_MIME
 from tab_bar import ColorTabBar
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -56,8 +58,14 @@ _CLIPBOARD = []
 def _widget_text(widget):
     """Reads the widget's *live* text (whatever the user actually typed,
     including leading/trailing spaces) rather than a separately tracked
-    field that only updates via the rename dialog."""
-    return widget.text() if hasattr(widget, "text") else None
+    field that only updates via the rename dialog. `QGroupBox` (the
+    `rect_group` container kind) has no `.text()` - its label is `.title()`
+    - so that's tried as a fallback."""
+    if hasattr(widget, "text"):
+        return widget.text()
+    if hasattr(widget, "title"):
+        return widget.title()
+    return None
 
 
 def _apply_anchors(page):
@@ -167,6 +175,7 @@ def _save_state(tabs_widget, window_size=None, target_file=None):
                         "group": entry.get("group"),
                         "no_border": entry.get("no_border", False),
                         "anchor": entry.get("anchor"),
+                        "parent_id": entry.get("parent_id"),
                         "checked": (
                             entry["widget"].isChecked() if entry["kind"] == "radiobutton" else None
                         ),
@@ -310,6 +319,7 @@ LINE_DEFAULT_SIZE = {
     "gvfpanel": (460, 200),
     "fpgaacquisition": (360, 250),
     "fpgaloading": (630, 120),
+    "rect_group": (200, 150),
 }
 URL_PLACEHOLDER = "URL 입력 (https://...)"
 DIR_PLACEHOLDER = "디렉토리 경로 입력"
@@ -329,7 +339,13 @@ WIDGET_FACTORIES = {
     "gvfpanel": lambda parent: GvfPanel(parent),
     "fpgaacquisition": lambda parent: FpgaAcquisitionPanel(parent),
     "fpgaloading": lambda parent: FpgaLoadingPanel(parent),
+    "rect_group": lambda parent: QGroupBox("컨테이너", parent),
 }
+
+# Kinds that other widgets can be dropped/dragged into as real Qt children -
+# just `rect_group` for now (see md_files/future_work_for_poor_developer.md-
+# style scoping: no container-in-container nesting, decision E).
+CONTAINER_KINDS = ("rect_group",)
 
 # Text-box-flavored kinds that share lineedit's behavior (font menu, etc.)
 TEXTBOX_KINDS = ("lineedit", "urlbox", "dirbox")
@@ -366,6 +382,70 @@ class CanvasPage(QWidget):
         self._last_deleted = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
+    def _page_rect(self, widget):
+        """`widget.geometry()` is relative to its *immediate* Qt parent -
+        correct for a top-level widget (whose parent is this page) but wrong
+        for a widget nested inside a `rect_group` container, whose geometry
+        is container-relative. Rubber-band selection, the selection outline,
+        and drag-snap candidates all need to compare/draw in one shared
+        space, so this maps any widget's rect into page coordinates
+        regardless of how deep its actual Qt parent chain is (capped at 1
+        level today, but this doesn't assume that)."""
+        top_left = widget.mapTo(self, QPoint(0, 0))
+        return QRect(top_left, widget.size())
+
+    def _container_at(self, page_point, exclude_widget_id=None):
+        """Returns the widget_id of the topmost `rect_group` whose page-space
+        rect contains `page_point`, or None. `self.entries` is iterated in
+        z-order (bottom to top - see `_bring_widget_to_front`'s own comment),
+        so walking it in reverse checks the topmost container first,
+        matching decision D (overlapping containers: the one actually drawn
+        on top wins)."""
+        for widget_id, entry in reversed(list(self.entries.items())):
+            if widget_id == exclude_widget_id or entry["kind"] not in CONTAINER_KINDS:
+                continue
+            if self._page_rect(entry["widget"]).contains(page_point):
+                return widget_id
+        return None
+
+    def _container_children(self, container_id):
+        """(child_id, entry) pairs for every entry directly parented to
+        `container_id` - nesting is capped at 1 level (decision E), so this
+        is always the complete descendant set, not just direct children."""
+        return [
+            (widget_id, entry)
+            for widget_id, entry in self.entries.items()
+            if entry.get("parent_id") == container_id
+        ]
+
+    _CONTAINER_MIN_PADDING = 8
+
+    def _container_min_size(self, container_id):
+        """A `rect_group` can't be resized smaller than the bounding box of
+        its current children (decision C) - computed dynamically from
+        wherever the children currently are, not a fixed constant. Falls
+        back to the generic `_MIN_SIZE` floor when the container has no
+        children yet."""
+        children = self._container_children(container_id)
+        if not children:
+            return self._MIN_SIZE, self._MIN_SIZE
+        max_right = max(entry["widget"].x() + entry["widget"].width() for _cid, entry in children)
+        max_bottom = max(entry["widget"].y() + entry["widget"].height() for _cid, entry in children)
+        pad = self._CONTAINER_MIN_PADDING
+        return (
+            max(self._MIN_SIZE, max_right + pad),
+            max(self._MIN_SIZE, max_bottom + pad),
+        )
+
+    def _resize_min_size(self, widget):
+        """The floor a widget can be resized down to - the generic
+        `_MIN_SIZE`, except a `rect_group` can't go below its own children's
+        bounding box (decision C)."""
+        entry = self.entries.get(widget.toolTip())
+        if entry and entry["kind"] == "rect_group":
+            return self._container_min_size(widget.toolTip())
+        return self._MIN_SIZE, self._MIN_SIZE
+
     def paintEvent(self, event):
         super().paintEvent(event)
         if not self._selected_ids:
@@ -378,7 +458,7 @@ class CanvasPage(QWidget):
         for widget_id in self._selected_ids:
             entry = self.entries.get(widget_id)
             if entry:
-                painter.drawRect(entry["widget"].geometry().adjusted(-3, -3, 3, 3))
+                painter.drawRect(self._page_rect(entry["widget"]).adjusted(-3, -3, 3, 3))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -404,7 +484,7 @@ class CanvasPage(QWidget):
             self._selected_ids = {
                 widget_id
                 for widget_id, entry in self.entries.items()
-                if select_rect.intersects(entry["widget"].geometry())
+                if select_rect.intersects(self._page_rect(entry["widget"]))
             }
             self.update()
         super().mouseReleaseEvent(event)
@@ -452,9 +532,10 @@ class CanvasPage(QWidget):
             if entry is None:
                 continue
             widget = entry["widget"]
+            bounds = widget.parentWidget()
             new_pos = widget.pos() + QPoint(dx * step, dy * step)
-            max_x = max(0, self.width() - widget.width())
-            max_y = max(0, self.height() - widget.height())
+            max_x = max(0, bounds.width() - widget.width())
+            max_y = max(0, bounds.height() - widget.height())
             new_pos.setX(min(max(0, new_pos.x()), max_x))
             new_pos.setY(min(max(0, new_pos.y()), max_y))
             widget.move(new_pos)
@@ -469,9 +550,32 @@ class CanvasPage(QWidget):
         than move/resize/color mistakes which are trivially redone by hand
         (see md_files/future_work_for_poor_developer.md item 8, which
         deliberately scopes this to delete-only rather than a full
-        undo/redo stack)."""
+        undo/redo stack).
+
+        Deleting a `rect_group` cascades to its children (decision A) - a
+        container's kids are Qt-owned by it, so leaving them out of the
+        snapshot/removal here would either orphan stale `entries` rows
+        pointing at soon-to-be-destroyed C++ objects, or (if the container
+        alone were removed from `entries` but the child widget itself
+        survived) silently detach them from the save/undo model entirely.
+        Nesting is capped at 1 level (decision E), so a single expansion
+        pass is enough - no need for a general graph walk."""
+        ids_to_delete = set(self._selected_ids)
+        ids_to_delete |= {
+            widget_id
+            for widget_id, entry in self.entries.items()
+            if entry.get("parent_id") in ids_to_delete
+        }
+
+        # Parent-first snapshot order (so undo recreates containers before
+        # the children that reference them); the actual removal below walks
+        # this same list in reverse, i.e. children-first.
+        parent_first_ids = sorted(
+            ids_to_delete, key=lambda wid: self.entries[wid].get("parent_id") is not None
+        )
+
         snapshot = []
-        for widget_id in self._selected_ids:
+        for widget_id in parent_first_ids:
             entry = self.entries.get(widget_id)
             if entry is None:
                 continue
@@ -493,12 +597,13 @@ class CanvasPage(QWidget):
                     "group": entry.get("group"),
                     "no_border": entry.get("no_border", False),
                     "anchor": entry.get("anchor"),
+                    "parent_id": entry.get("parent_id"),
                     "checked": (widget.isChecked() if entry["kind"] == "radiobutton" else None),
                 }
             )
         self._last_deleted = snapshot or None
 
-        for widget_id in list(self._selected_ids):
+        for widget_id in reversed(parent_first_ids):
             self._remove_widget(widget_id)
 
     def _undo_last_delete(self):
@@ -523,6 +628,7 @@ class CanvasPage(QWidget):
                 data.get("no_border", False),
                 data.get("checked"),
                 data.get("anchor"),
+                data.get("parent_id"),
             )
             restored_ids.add(data["id"])
         self._last_deleted = None
@@ -544,6 +650,14 @@ class CanvasPage(QWidget):
         self.update()
 
     def _copy_selected_widgets(self):
+        """Copy/paste doesn't (yet - see md_files future-work notes) preserve
+        container membership: a copied child pastes back as a fresh
+        top-level widget. Capturing via `_page_rect` rather than raw
+        `widget.pos()` is still required even for that simplified behavior -
+        a nested child's raw `.pos()` is container-relative (typically a
+        small number), and pasting that as if it were a page-relative
+        coordinate would land the paste far from where the widget visually
+        was."""
         global _CLIPBOARD
         if not self._selected_ids:
             return
@@ -554,11 +668,12 @@ class CanvasPage(QWidget):
             if entry is None:
                 continue
             widget = entry["widget"]
+            page_rect = self._page_rect(widget)
             clipboard.append(
                 {
                     "kind": entry["kind"],
-                    "x": widget.pos().x(),
-                    "y": widget.pos().y(),
+                    "x": page_rect.x(),
+                    "y": page_rect.y(),
                     "width": widget.width(),
                     "height": widget.height(),
                     "instruction": entry["instruction"],
@@ -606,22 +721,64 @@ class CanvasPage(QWidget):
         self.update()
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasFormat(WIDGET_KIND_MIME):
+        mime = event.mimeData()
+        if mime.hasFormat(WIDGET_KIND_MIME) or mime.hasFormat(WIDGET_TEMPLATE_MIME):
             event.acceptProposedAction()
 
     def dragMoveEvent(self, event):
-        if event.mimeData().hasFormat(WIDGET_KIND_MIME):
+        mime = event.mimeData()
+        if mime.hasFormat(WIDGET_KIND_MIME) or mime.hasFormat(WIDGET_TEMPLATE_MIME):
             event.acceptProposedAction()
 
     def dropEvent(self, event):
-        kind = bytes(event.mimeData().data(WIDGET_KIND_MIME)).decode()
+        mime = event.mimeData()
+        pos = event.position().toPoint()
+
+        if mime.hasFormat(WIDGET_TEMPLATE_MIME):
+            template_key = bytes(mime.data(WIDGET_TEMPLATE_MIME)).decode()
+            self._drop_template(template_key)
+            event.acceptProposedAction()
+            return
+
+        if not mime.hasFormat(WIDGET_KIND_MIME):
+            return
+        kind = bytes(mime.data(WIDGET_KIND_MIME)).decode()
         if kind not in WIDGET_FACTORIES:
             return
 
         widget_id = self._next_id(kind)
-        pos = event.position().toPoint()
-        self._create_widget(kind, widget_id, pos.x(), pos.y())
+        # Dropping onto an existing rect_group nests the new widget inside it
+        # as a real Qt child (decision D: topmost container at that point
+        # wins) - `kind` is never "rect_group" here (that only ever arrives
+        # via the template MIME path above), so decision E (no nesting a
+        # container inside a container) doesn't need an extra check.
+        parent_id = self._container_at(pos)
+        local_pos = pos
+        if parent_id is not None:
+            local_pos = self.entries[parent_id]["widget"].mapFrom(self, pos)
+        self._create_widget(kind, widget_id, local_pos.x(), local_pos.y(), parent_id=parent_id)
         event.acceptProposedAction()
+
+    def _drop_template(self, template_key):
+        """Creates every rect in the named template as a fresh top-level
+        `rect_group` (never nested - a template is never dropped *into* an
+        existing container even if the drop point lands on one, per decision
+        E). Sizes/positions come from the template's *relative* fractions of
+        the page's current size (see layout_templates.py's module docstring
+        for why fractions rather than fixed pixels)."""
+        spec = TEMPLATE_SPECS_BY_KEY.get(template_key)
+        if spec is None:
+            return
+        page_w, page_h = self.width(), self.height()
+        for rect in spec["rects"]:
+            widget_id = self._next_id("rect_group")
+            x = round(rect["rel_x"] * page_w)
+            y = round(rect["rel_y"] * page_h)
+            w = round(rect["rel_w"] * page_w)
+            h = round(rect["rel_h"] * page_h)
+            self._create_widget(
+                "rect_group", widget_id, x, y, text=rect["title"], width=w, height=h,
+            )
 
     def _next_id(self, kind):
         self._counters[kind] = self._counters.get(kind, 0) + 1
@@ -630,9 +787,13 @@ class CanvasPage(QWidget):
     def _create_widget(
         self, kind, widget_id, x, y, instruction="", code="", text=None, color=None,
         width=None, height=None, font_family=None, font_size=None, group=None,
-        no_border=False, checked=None, anchor=None,
+        no_border=False, checked=None, anchor=None, parent_id=None,
     ):
-        widget = WIDGET_FACTORIES[kind](self)
+        # `parent_id`, when given, must already exist in `self.entries` -
+        # callers (drop handling, restore, undo) are responsible for
+        # creating/restoring containers before their children.
+        qt_parent = self.entries[parent_id]["widget"] if parent_id else self
+        widget = WIDGET_FACTORIES[kind](qt_parent)
         widget.setToolTip(widget_id)
         widget.setContextMenuPolicy(Qt.CustomContextMenu)
         widget.customContextMenuRequested.connect(
@@ -671,10 +832,15 @@ class CanvasPage(QWidget):
             "group": group,
             "no_border": no_border,
             "anchor": anchor,
+            "parent_id": parent_id,
         }
 
         if text is not None and hasattr(widget, "setText"):
             widget.setText(text)
+        elif text is not None and hasattr(widget, "setTitle"):
+            # QGroupBox (rect_group's kind) has no setText - its label is
+            # the box title instead.
+            widget.setTitle(text)
         if color:
             widget.setAttribute(Qt.WA_StyledBackground, True)
             _apply_scoped_background(widget, color)
@@ -709,16 +875,19 @@ class CanvasPage(QWidget):
     def restore_widget(
         self, kind, widget_id, x, y, instruction, code, text=None, color=None,
         width=None, height=None, font_family=None, font_size=None, group=None,
-        no_border=False, checked=None, anchor=None,
+        no_border=False, checked=None, anchor=None, parent_id=None,
     ):
         """Recreates a widget saved by a previous session, keeping the id
-        counter ahead of it so newly dropped widgets don't collide."""
+        counter ahead of it so newly dropped widgets don't collide. Caller
+        must restore top-level widgets (parent_id is None) before any widget
+        that references them as parent_id - see `_restore_from_state`'s
+        two-pass split."""
         suffix = widget_id.rsplit("_", 1)[-1]
         if suffix.isdigit():
             self._counters[kind] = max(self._counters.get(kind, 0), int(suffix))
         self._create_widget(
             kind, widget_id, x, y, instruction, code, text, color, width, height,
-            font_family, font_size, group, no_border, checked, anchor,
+            font_family, font_size, group, no_border, checked, anchor, parent_id,
         )
 
     _DRAG_THRESHOLD = 4
@@ -760,7 +929,31 @@ class CanvasPage(QWidget):
                 delta = event.globalPosition().toPoint() - self._drag_start_global
                 if not self._drag_moved and delta.manhattanLength() < self._DRAG_THRESHOLD:
                     return False
-                self._drag_moved = True
+
+                if not self._drag_moved:
+                    self._drag_moved = True
+                    if obj.parentWidget() is not self:
+                        # A container child is temporarily lifted to the page
+                        # for the duration of the drag - clamping/snapping
+                        # against the container's small bounds would make it
+                        # impossible to ever drag back out (decision B), and
+                        # simply not clamping would leave it clipped/invisible
+                        # the moment it crosses the container's edge (Qt only
+                        # paints a child within its parent's rect). The real
+                        # parent is decided once, on release - see
+                        # `_resolve_drop_parent`.
+                        page_pos = obj.mapTo(self, QPoint(0, 0))
+                        obj.setParent(self)
+                        obj.move(page_pos)
+                        obj.show()  # setParent() hides the widget
+                        obj.raise_()
+                        # The delta accumulated so far was measured in the
+                        # old parent's coordinate space and no longer
+                        # applies - reset the baseline to "now" so the
+                        # widget doesn't jump under the cursor.
+                        self._drag_start_global = event.globalPosition().toPoint()
+                        self._drag_start_widget_pos = obj.pos()
+                        delta = QPoint(0, 0)
 
                 new_pos = self._drag_start_widget_pos + delta
                 max_x = max(0, self.width() - obj.width())
@@ -786,6 +979,8 @@ class CanvasPage(QWidget):
 
             if obj is self._drag_widget:
                 was_dragged = self._drag_moved
+                if was_dragged:
+                    self._resolve_drop_parent(obj)
                 self._drag_widget = None
                 self._drag_start_global = None
                 self._drag_start_widget_pos = None
@@ -835,23 +1030,65 @@ class CanvasPage(QWidget):
         delta = current_global - self._resize_start_global
         geom = self._resize_start_geom
         mode = self._resize_mode
+        bounds = widget.parentWidget()
+        min_w, min_h = self._resize_min_size(widget)
 
         new_x, new_y, new_w, new_h = geom.x(), geom.y(), geom.width(), geom.height()
 
+        # Each branch clamps the *size* against the parent's bounds too, not
+        # just the final position - growing from the fixed edge must not
+        # push the moving edge past the parent's own edge. Previously only
+        # position was clamped, which let a widget's bottom-right handle
+        # drag it arbitrarily large (harmless-looking on the big page, but
+        # turns into a widget ballooning way past a small `rect_group`
+        # container's bounds - caught by an actual resize-drag test, not by
+        # reading the code).
         if "right" in mode:
-            new_w = max(self._MIN_SIZE, geom.width() + delta.x())
+            new_w = max(min_w, min(geom.width() + delta.x(), bounds.width() - geom.x()))
         if "left" in mode:
-            new_w = max(self._MIN_SIZE, geom.width() - delta.x())
+            new_w = max(min_w, min(geom.width() - delta.x(), geom.x() + geom.width()))
             new_x = geom.x() + (geom.width() - new_w)
         if "bottom" in mode:
-            new_h = max(self._MIN_SIZE, geom.height() + delta.y())
+            new_h = max(min_h, min(geom.height() + delta.y(), bounds.height() - geom.y()))
         if "top" in mode:
-            new_h = max(self._MIN_SIZE, geom.height() - delta.y())
+            new_h = max(min_h, min(geom.height() - delta.y(), geom.y() + geom.height()))
             new_y = geom.y() + (geom.height() - new_h)
 
-        new_x = min(max(0, new_x), max(0, self.width() - self._MIN_SIZE))
-        new_y = min(max(0, new_y), max(0, self.height() - self._MIN_SIZE))
+        new_x = min(max(0, new_x), max(0, bounds.width() - new_w))
+        new_y = min(max(0, new_y), max(0, bounds.height() - new_h))
         widget.setGeometry(new_x, new_y, new_w, new_h)
+
+    def _resolve_drop_parent(self, widget):
+        """Called once, when a drag ends (release, after real movement) -
+        decides the widget's final Qt parent based on where it landed: the
+        topmost `rect_group` it's now over (decision D), or the bare page if
+        none. A dragged container always resolves to the page regardless of
+        what it's dropped on (decision E - no nesting a container inside
+        another container). Every dragged widget is page-parented for the
+        whole drag (see the MouseMove branch above), so this is the single
+        place a widget actually settles into - or back out of - a container,
+        which is what makes R4 (drag a widget in) and decision B (drag it
+        back out) the same code path rather than two special cases."""
+        widget_id = widget.toolTip()
+        entry = self.entries.get(widget_id)
+        if entry is None:
+            return
+
+        if entry["kind"] in CONTAINER_KINDS:
+            target_id = None
+        else:
+            target_id = self._container_at(widget.geometry().center(), exclude_widget_id=widget_id)
+
+        entry["parent_id"] = target_id
+        if target_id is None:
+            return  # already page-parented by the drag's lift-to-page step
+
+        container = self.entries[target_id]["widget"]
+        local_pos = container.mapFrom(self, widget.pos())
+        widget.setParent(container)
+        widget.move(local_pos)
+        widget.show()
+        widget.raise_()
 
     _SNAP_THRESHOLD = 3
 
@@ -871,10 +1108,15 @@ class CanvasPage(QWidget):
             other = other_entry["widget"]
             if other is widget:
                 continue
-            x_candidates.append(other.x())
-            x_candidates.append(other.x() + other.width())
-            y_candidates.append(other.y())
-            y_candidates.append(other.y() + other.height())
+            # `widget` is always page-parented during a live drag (see the
+            # MouseMove lift-to-page step), so candidates must be in the
+            # same page-space too - a nested other-widget's raw .x()/.y()
+            # would be relative to its own container instead.
+            other_rect = self._page_rect(other)
+            x_candidates.append(other_rect.x())
+            x_candidates.append(other_rect.x() + other_rect.width())
+            y_candidates.append(other_rect.y())
+            y_candidates.append(other_rect.y() + other_rect.height())
 
         def snap_axis(value, size, candidates):
             best_value = value
@@ -943,7 +1185,11 @@ class CanvasPage(QWidget):
         send_back_action = menu.addAction("맨 뒤로")
         geometry_action = menu.addAction("위치/크기...")
         color_action = menu.addAction("색깔 변경")
-        rename_action = menu.addAction("이름 변경") if hasattr(widget, "setText") else None
+        rename_action = (
+            menu.addAction("이름 변경")
+            if hasattr(widget, "setText") or hasattr(widget, "setTitle")
+            else None
+        )
         font_action = menu.addAction("폰트 설정") if entry["kind"] in TEXTBOX_KINDS else None
         no_border_action = (
             menu.addAction("테두리 없애기") if entry["kind"] in TEXTBOX_KINDS else None
@@ -1022,6 +1268,8 @@ class CanvasPage(QWidget):
             return
         widget = entry["widget"]
         geom = widget.geometry()
+        bounds = widget.parentWidget()
+        min_w, min_h = self._resize_min_size(widget)
 
         dialog = QDialog(self)
         dialog.setWindowTitle(f"위치/크기 — {widget_id}")
@@ -1040,12 +1288,12 @@ class CanvasPage(QWidget):
         form.addRow("Y", y_spin)
 
         width_spin = QSpinBox()
-        width_spin.setRange(self._MIN_SIZE, 9999)
+        width_spin.setRange(min_w, max(min_w, bounds.width()))
         width_spin.setValue(geom.width())
         form.addRow("폭", width_spin)
 
         height_spin = QSpinBox()
-        height_spin.setRange(self._MIN_SIZE, 9999)
+        height_spin.setRange(min_h, max(min_h, bounds.height()))
         height_spin.setValue(geom.height())
         form.addRow("높이", height_spin)
 
@@ -1059,10 +1307,10 @@ class CanvasPage(QWidget):
         if dialog.exec() != QDialog.Accepted:
             return
 
-        new_w = max(self._MIN_SIZE, width_spin.value())
-        new_h = max(self._MIN_SIZE, height_spin.value())
-        max_x = max(0, self.width() - new_w)
-        max_y = max(0, self.height() - new_h)
+        new_w = max(min_w, width_spin.value())
+        new_h = max(min_h, height_spin.value())
+        max_x = max(0, bounds.width() - new_w)
+        max_y = max(0, bounds.height() - new_h)
         new_x = min(max(0, x_spin.value()), max_x)
         new_y = min(max(0, y_spin.value()), max_y)
         widget.setGeometry(new_x, new_y, new_w, new_h)
@@ -1076,7 +1324,7 @@ class CanvasPage(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle("이름 변경")
         layout = QVBoxLayout(dialog)
-        line_edit = QLineEdit(widget.text())
+        line_edit = QLineEdit(_widget_text(widget) or "")
         layout.addWidget(line_edit)
 
         buttons = QDialogButtonBox()
@@ -1091,8 +1339,15 @@ class CanvasPage(QWidget):
 
         new_text = line_edit.text()
         if new_text.strip():
-            widget.setText(new_text)
-            widget.adjustSize()
+            if hasattr(widget, "setText"):
+                widget.setText(new_text)
+                widget.adjustSize()
+            elif hasattr(widget, "setTitle"):
+                # A rect_group has no layout - its sizeHint is derived from
+                # the title text alone, so calling adjustSize() here would
+                # shrink the box down around the new title and clip/hide
+                # whatever children it already contains.
+                widget.setTitle(new_text)
             entry["text"] = new_text
 
     def _pick_widget_font(self, widget_id):
@@ -1157,7 +1412,15 @@ class CanvasTabs(QTabWidget):
     def _restore_from_state(self, state):
         for tab_data in state["tabs"]:
             page = CanvasPage()
-            for w in tab_data.get("widgets", []):
+            widgets = tab_data.get("widgets", [])
+            # Parent-before-child order: a container must already exist in
+            # `page.entries` by the time `_create_widget` looks up its
+            # `parent_id`. Nesting is capped at 1 level (decision E), so
+            # this simple split (rather than a general topological sort) is
+            # enough - each group's own relative order is preserved.
+            top_level = [w for w in widgets if not w.get("parent_id")]
+            children = [w for w in widgets if w.get("parent_id")]
+            for w in top_level + children:
                 page.restore_widget(
                     w["kind"],
                     w["id"],
@@ -1175,6 +1438,7 @@ class CanvasTabs(QTabWidget):
                     w.get("no_border", False),
                     w.get("checked"),
                     w.get("anchor"),
+                    w.get("parent_id"),
                 )
             _apply_anchors(page)
 

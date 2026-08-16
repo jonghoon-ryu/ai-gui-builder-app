@@ -100,6 +100,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
+    QGroupBox,
     QInputDialog,
     QLineEdit,
     QMainWindow,
@@ -502,7 +503,7 @@ if __name__ == "__main__":
 
 def _create_lines(
     widget_id, kind, x, y, parent_var, text=None, color=None, width=None, height=None,
-    font_family=None, font_size=None, no_border=False, widget=None,
+    font_family=None, font_size=None, no_border=False, widget=None, title=None,
 ):
     lines = []
     if kind == "combobox":
@@ -575,6 +576,9 @@ def _create_lines(
         lines.append(f'self.{widget_id}.setFrameShadow(QFrame.Shadow.Plain)')
         lines.append(f'self.{widget_id}.setLineWidth(2)')
         lines.append(f'self.{widget_id}.setStyleSheet("color: #777777;")')
+    elif kind == "rect_group":
+        escaped_title = (title or "컨테이너").replace('\\', '\\\\').replace('"', '\\"')
+        lines.append(f'self.{widget_id} = QGroupBox("{escaped_title}", {parent_var})')
     else:
         raise ValueError(f"unknown widget kind: {kind}")
 
@@ -663,7 +667,7 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
 
         radio_groups = {}  # group id -> [(full_id, is_checked), ...]
 
-        for widget_id, entry in entries.items():
+        def emit_entry(widget_id, entry, parent_var):
             full_id = f"{prefix}{widget_id}"
             widget = entry["widget"]
 
@@ -674,16 +678,21 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
             size = widget.size()
             # Read live text (whatever the user actually typed, including
             # leading/trailing spaces) rather than a separately tracked
-            # field that only updates via the rename dialog.
+            # field that only updates via the rename dialog. rect_group has
+            # no .text() - its label is a QGroupBox title instead, carried
+            # via the separate `title` kwarg below so the generic setText()
+            # post-processing in `_create_lines` doesn't try to call it on a
+            # QGroupBox (which has no .setText()).
             live_text = widget.text() if hasattr(widget, "text") else None
+            live_title = widget.title() if hasattr(widget, "title") else None
             init_lines.extend(
                 _create_lines(
                     full_id,
                     entry["kind"],
                     pos.x(),
                     pos.y(),
-                    page_var,
-                    live_text,
+                    parent_var,
+                    None if entry["kind"] == "rect_group" else live_text,
                     entry.get("color"),
                     size.width(),
                     size.height(),
@@ -691,6 +700,7 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
                     entry.get("font_size"),
                     entry.get("no_border", False),
                     widget,
+                    live_title if entry["kind"] == "rect_group" else None,
                 )
             )
 
@@ -703,6 +713,24 @@ def generate_source(tabs, width, height, class_name="GeneratedApp", window_title
                 method_blocks.append(_method_source(full_id, scoped_code))
 
             init_lines.append("")
+
+        # Parent-before-child: a nested widget's `setParent` target
+        # (`self.<container's already-prefixed id>`) must exist as a real
+        # local var by the time its own constructor line runs. Nesting is
+        # capped at 1 level (decision E), so this simple split - rather than
+        # a general topological sort - is enough; each group's own relative
+        # (z-)order is preserved since list comprehensions keep source order.
+        top_level_items = [(wid, e) for wid, e in entries.items() if not e.get("parent_id")]
+        child_items = [(wid, e) for wid, e in entries.items() if e.get("parent_id")]
+
+        for widget_id, entry in top_level_items:
+            emit_entry(widget_id, entry, page_var)
+        for widget_id, entry in child_items:
+            # `parent_id` is the container's *un-prefixed* id (as saved in
+            # `entries`) - its generated var name got the same per-tab
+            # prefix applied when it was emitted above.
+            container_var = f"self.{prefix}{entry['parent_id']}"
+            emit_entry(widget_id, entry, container_var)
 
         for group_index, members in enumerate(radio_groups.values()):
             group_var = f"{prefix}radio_group_{group_index}"

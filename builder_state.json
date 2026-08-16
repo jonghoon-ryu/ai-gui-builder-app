@@ -24,6 +24,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -42,6 +43,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -63,6 +65,7 @@
             "left": "gvfpanel_1",
             "right": "fpgaacq_1"
           },
+          "parent_id": null,
           "checked": null
         }
       ]
@@ -87,6 +90,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         }
       ]
@@ -111,6 +115,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -129,6 +134,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -147,6 +153,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -165,6 +172,7 @@
           "group": "radiobutton_1",
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": true
         },
         {
@@ -183,6 +191,7 @@
           "group": "radiobutton_1",
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": false
         },
         {
@@ -201,6 +210,7 @@
           "group": null,
           "no_border": true,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -219,6 +229,7 @@
           "group": null,
           "no_border": true,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         }
       ]
@@ -243,6 +254,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         }
       ]
@@ -267,6 +279,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         }
       ]
@@ -291,6 +304,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -309,6 +323,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -327,6 +342,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -345,6 +361,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -363,6 +380,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -381,6 +399,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -399,6 +418,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -417,6 +437,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -435,6 +456,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -453,6 +475,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -471,6 +494,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -489,6 +513,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -507,6 +532,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -525,6 +551,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -543,6 +570,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -561,6 +589,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         }
       ]
@@ -585,6 +614,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -603,6 +633,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -621,6 +652,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         },
         {
@@ -639,6 +671,7 @@
           "group": null,
           "no_border": false,
           "anchor": null,
+          "parent_id": null,
           "checked": null
         }
       ]

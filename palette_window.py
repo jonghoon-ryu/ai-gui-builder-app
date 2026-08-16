@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QMimeData
-from PySide6.QtGui import QDrag
+from PySide6.QtGui import QColor, QDrag, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -12,7 +12,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from layout_templates import TEMPLATE_SPECS_BY_KEY
+
 WIDGET_KIND_MIME = "application/x-widget-kind"
+# Carries a `layout_templates.TEMPLATE_SPECS` entry's "key" (plain utf-8
+# string, not JSON) - the canvas looks the spec back up by key on drop
+# (see canvas_window.py's `_drop_template`), so the drag payload itself
+# stays as simple as the existing single-kind one.
+WIDGET_TEMPLATE_MIME = "application/x-widget-template"
 
 # Half the palette's previous item width, and shared with the save buttons
 # on the right so both columns read as the same width.
@@ -73,6 +80,44 @@ class DraggableRadioButton(DraggableMixin, QRadioButton):
     widget_kind = "radiobutton"
 
 
+class DraggableTemplate(QWidget):
+    """A small preview thumbnail for one `layout_templates.TEMPLATE_SPECS`
+    entry - dragging it onto the canvas drops that template's `rect_group`
+    boxes all at once (see canvas_window.py's `_drop_template`). Not a
+    `DraggableMixin` subclass since it carries a template *key* on the new
+    `WIDGET_TEMPLATE_MIME` format rather than a single widget kind."""
+
+    PREVIEW_HEIGHT = 90
+
+    def __init__(self, spec, parent=None):
+        super().__init__(parent)
+        self._spec = spec
+        self.setFixedSize(ITEM_WIDTH, self.PREVIEW_HEIGHT)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setPen(QPen(QColor("#5b72e0"), 2))
+        painter.setBrush(QColor("#eef0fb"))
+        for rect in self._spec["rects"]:
+            x = round(rect["rel_x"] * self.width())
+            y = round(rect["rel_y"] * self.height())
+            w = round(rect["rel_w"] * self.width())
+            h = round(rect["rel_h"] * self.height())
+            painter.drawRect(x, y, w, h)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            drag = QDrag(self)
+            mime = QMimeData()
+            mime.setData(WIDGET_TEMPLATE_MIME, self._spec["key"].encode())
+            drag.setMimeData(mime)
+            drag.setPixmap(self.grab())
+            drag.setHotSpot(event.pos())
+            drag.exec(Qt.CopyAction)
+            return
+        super().mousePressEvent(event)
+
+
 class PaletteWindow(QWidget):
     def __init__(self, canvas_window=None):
         super().__init__()
@@ -126,6 +171,8 @@ class PaletteWindow(QWidget):
 
         radio_button = DraggableRadioButton("옵션")
 
+        template_single = DraggableTemplate(TEMPLATE_SPECS_BY_KEY["single"])
+
         for index, (label_text, widget) in enumerate(
             [
                 ("드롭박스", combo),
@@ -136,6 +183,7 @@ class PaletteWindow(QWidget):
                 ("라디오 버튼", radio_button),
                 ("가로선", hline),
                 ("세로선", vline),
+                ("템플릿: " + TEMPLATE_SPECS_BY_KEY["single"]["label"], template_single),
             ]
         ):
             if index > 0:
