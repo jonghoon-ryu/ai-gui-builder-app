@@ -650,30 +650,58 @@ class CanvasPage(QWidget):
         self.update()
 
     def _copy_selected_widgets(self):
-        """Copy/paste doesn't (yet - see md_files future-work notes) preserve
-        container membership: a copied child pastes back as a fresh
-        top-level widget. Capturing via `_page_rect` rather than raw
-        `widget.pos()` is still required even for that simplified behavior -
-        a nested child's raw `.pos()` is container-relative (typically a
-        small number), and pasting that as if it were a page-relative
-        coordinate would land the paste far from where the widget visually
-        was."""
+        """Copying a selected `rect_group` also copies its children, as a
+        single rigid unit that re-nests under the *pasted copy* of the
+        container (mirrors cascade-delete's reasoning) - nesting is capped
+        at 1 level (decision E), so one expansion pass is enough. A child
+        copied *without* its container still pastes as a fresh top-level
+        widget instead of being silently dropped or mis-nested.
+
+        Position capture differs by whether an entry will paste nested or
+        top-level: a child staying nested (its container is in this same
+        copy) keeps its raw local `.x()/.y()` - unchanged, since the whole
+        subtree shifts together via the container's own paste offset. An
+        entry that will paste top-level (no parent, or a lone child copied
+        without its container) needs `_page_rect` instead of raw
+        `widget.pos()` - a nested child's raw pos is container-relative
+        (typically a small number), and pasting that as if it were a
+        page-relative coordinate would land the paste far from where the
+        widget visually was."""
         global _CLIPBOARD
         if not self._selected_ids:
             return
 
+        ids_to_copy = set(self._selected_ids)
+        ids_to_copy |= {
+            widget_id
+            for widget_id, entry in self.entries.items()
+            if entry.get("parent_id") in ids_to_copy
+        }
+        # Parent-first order so paste can remap parent ids in one forward pass.
+        ordered_ids = sorted(
+            ids_to_copy, key=lambda wid: self.entries[wid].get("parent_id") is not None
+        )
+
         clipboard = []
-        for widget_id in self._selected_ids:
+        for widget_id in ordered_ids:
             entry = self.entries.get(widget_id)
             if entry is None:
                 continue
             widget = entry["widget"]
-            page_rect = self._page_rect(widget)
+            parent_id = entry.get("parent_id")
+            pastes_nested = parent_id in ids_to_copy
+            if pastes_nested:
+                x, y = widget.x(), widget.y()
+            else:
+                page_rect = self._page_rect(widget)
+                x, y = page_rect.x(), page_rect.y()
             clipboard.append(
                 {
+                    "id": widget_id,
+                    "parent_id": parent_id if pastes_nested else None,
                     "kind": entry["kind"],
-                    "x": page_rect.x(),
-                    "y": page_rect.y(),
+                    "x": x,
+                    "y": y,
                     "width": widget.width(),
                     "height": widget.height(),
                     "instruction": entry["instruction"],
@@ -692,17 +720,36 @@ class CanvasPage(QWidget):
     _PASTE_OFFSET = 20
 
     def _paste_clipboard(self):
+        """Parent-first paste order (matching how the clipboard was built),
+        remapping each copied id to its freshly pasted id so a child's
+        `parent_id` reference follows the *new* container, not the
+        original."""
         if not _CLIPBOARD:
             return
 
         pasted_ids = set()
-        for data in _CLIPBOARD:
+        id_remap = {}  # original copied id -> newly pasted id
+        top_level = [d for d in _CLIPBOARD if d.get("parent_id") is None]
+        children = [d for d in _CLIPBOARD if d.get("parent_id") is not None]
+
+        for data in top_level + children:
             widget_id = self._next_id(data["kind"])
+            parent_id = id_remap.get(data.get("parent_id"))
+            x, y = data["x"], data["y"]
+            if parent_id is None:
+                # Top-level paste: offset in page space so it's visibly a
+                # copy, not sitting exactly on top of the original.
+                x += self._PASTE_OFFSET
+                y += self._PASTE_OFFSET
+            # A nested child's position is left exactly as captured (already
+            # relative to its container) - only the container itself is
+            # offset, so the whole subtree moves together without the
+            # children drifting out of alignment with each other.
             self._create_widget(
                 data["kind"],
                 widget_id,
-                data["x"] + self._PASTE_OFFSET,
-                data["y"] + self._PASTE_OFFSET,
+                x,
+                y,
                 data["instruction"],
                 data["code"],
                 data["text"],
@@ -714,7 +761,9 @@ class CanvasPage(QWidget):
                 data.get("group"),
                 data.get("no_border", False),
                 data.get("checked"),
+                parent_id=parent_id,
             )
+            id_remap[data["id"]] = widget_id
             pasted_ids.add(widget_id)
 
         self._selected_ids = pasted_ids
