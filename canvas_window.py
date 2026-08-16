@@ -879,13 +879,19 @@ class CanvasPage(QWidget):
         """Creates every rect in the named template as a fresh top-level
         `rect_group` (never nested - a template is never dropped *into* an
         existing container even if the drop point lands on one, per decision
-        E). Sizes/positions come from the template's *relative* fractions of
+        E). Sizes/positions start from the template's *relative* fractions of
         the page's current size (see layout_templates.py's module docstring
-        for why fractions rather than fixed pixels)."""
+        for why fractions rather than fixed pixels), then get run through the
+        same margin-equalizing pass as the "선택한 사각형들 정렬" menu action
+        (`_align_containers`) so a freshly-dropped template's outer margins/
+        gaps come out exactly equal automatically, instead of only
+        approximately equal the way the raw template fractions happen to
+        land after rounding to pixels."""
         spec = TEMPLATE_SPECS_BY_KEY.get(template_key)
         if spec is None:
             return
         page_w, page_h = self.width(), self.height()
+        new_ids = []
         for rect in spec["rects"]:
             widget_id = self._next_id("rect_group")
             x = round(rect["rel_x"] * page_w)
@@ -895,6 +901,8 @@ class CanvasPage(QWidget):
             self._create_widget(
                 "rect_group", widget_id, x, y, text=rect["title"], width=w, height=h,
             )
+            new_ids.append(widget_id)
+        self._align_containers(new_ids, self.rect())
 
     def _next_id(self, kind):
         self._counters[kind] = self._counters.get(kind, 0) + 1
@@ -1024,6 +1032,26 @@ class CanvasPage(QWidget):
         - while still allowing a plain click/tap to reach the widget
         normally (button click, combobox open, text focus...)."""
         event_type = event.type()
+
+        if (
+            event_type == QEvent.Type.KeyPress
+            and event.key() in self._ARROW_KEY_DELTAS
+            and self._selected_ids
+        ):
+            # A right-click or Ctrl+click selection doesn't move keyboard
+            # focus onto the page - it stays wherever it already was (often
+            # the very widget just clicked, e.g. a QLineEdit). A focused
+            # QLineEdit consumes Left/Right itself for text-cursor movement
+            # but does nothing with Up/Down, which just bubbles up to
+            # `CanvasPage.keyPressEvent` - so Up/Down nudging worked while
+            # Left/Right silently didn't (the reported bug). Every placed
+            # widget already has this page installed as its event filter
+            # (for drag/resize), so intercepting arrow keys here - before
+            # the individual widget's own keyPressEvent runs - makes
+            # nudging work the same regardless of which widget currently
+            # has focus.
+            self._nudge_selected_widgets(event.key(), event.modifiers())
+            return True
 
         if event_type == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -1565,6 +1593,16 @@ class CanvasPage(QWidget):
         Preserving an already-selected widget's group (rather than always
         replacing) is what lets the batch actions below see the full group
         when invoked from one of its own members."""
+        # Right-clicking a widget doesn't otherwise change keyboard focus,
+        # so it can be left sitting on whatever was focused before (e.g. a
+        # QLineEdit) - which then silently eats Left/Right arrow presses as
+        # its own text-cursor movement instead of letting them reach
+        # `_nudge_selected_widgets` (Up/Down happened to still work, since a
+        # single-line QLineEdit doesn't do anything with those and lets
+        # them bubble up - this was the reported "그룹 선택 후 좌우 이동 안
+        # 됨" bug). Reclaiming focus here after every right-click selection
+        # keeps arrow-key nudging reliable for all 4 directions.
+        self.setFocus()
         if add_to_selection:
             self._selected_ids.add(widget_id)
             self._refresh_selection_overlay()
@@ -1777,14 +1815,15 @@ class CanvasPage(QWidget):
 
         new_text = line_edit.text()
         if new_text.strip():
+            # No adjustSize() here for any kind - a widget's size/position
+            # is something the user sets explicitly (drag-resize or the
+            # numeric size/position dialog), so renaming it must never
+            # change either as a side effect (was happening for buttons:
+            # a longer/shorter label changed the button's sizeHint, and
+            # adjustSize() snapped the button to it).
             if hasattr(widget, "setText"):
                 widget.setText(new_text)
-                widget.adjustSize()
             elif hasattr(widget, "setTitle"):
-                # A rect_group has no layout - its sizeHint is derived from
-                # the title text alone, so calling adjustSize() here would
-                # shrink the box down around the new title and clip/hide
-                # whatever children it already contains.
                 widget.setTitle(new_text)
             entry["text"] = new_text
 
@@ -1798,8 +1837,9 @@ class CanvasPage(QWidget):
         if not ok:
             return
 
+        # Same invariant as rename: changing a property must never move or
+        # resize the widget out from under the user's own placement.
         widget.setFont(font)
-        widget.adjustSize()
         entry["font_family"] = font.family()
         entry["font_size"] = font.pointSize()
 

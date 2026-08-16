@@ -24,9 +24,17 @@ WIDGET_KIND_MIME = "application/x-widget-kind"
 # stays as simple as the existing single-kind one.
 WIDGET_TEMPLATE_MIME = "application/x-widget-template"
 
-# Half the palette's previous item width, and shared with the save buttons
-# on the right so both columns read as the same width.
-ITEM_WIDTH = 194
+# Shared by every palette column's items (and the save buttons) so they all
+# read as the same width. 80% of the previous 194 (rounded).
+ITEM_WIDTH = round(194 * 0.8)
+
+# The palette's own starting window size, in Qt logical pixels - captured
+# from the size the user manually resized it to (most recently on
+# 2026-08-16, after the column-width shrink) and kept as the launch default
+# from then on, replacing the previous auto-computed "1.5x screen height"
+# formula.
+DEFAULT_WIDTH = 723
+DEFAULT_HEIGHT = 834
 
 
 class DraggableMixin:
@@ -94,12 +102,16 @@ class DraggableTemplate(QWidget):
     `DraggableMixin` subclass since it carries a template *key* on the new
     `WIDGET_TEMPLATE_MIME` format rather than a single widget kind."""
 
-    PREVIEW_HEIGHT = 90
+    # 70% of the item column's width/original 90px height - only the
+    # template thumbnails shrink, not ITEM_WIDTH itself (that's shared with
+    # every other palette entry and the save buttons).
+    PREVIEW_WIDTH = round(ITEM_WIDTH * 0.7)
+    PREVIEW_HEIGHT = round(90 * 0.7)
 
     def __init__(self, spec, parent=None):
         super().__init__(parent)
         self._spec = spec
-        self.setFixedSize(ITEM_WIDTH, self.PREVIEW_HEIGHT)
+        self.setFixedSize(self.PREVIEW_WIDTH, self.PREVIEW_HEIGHT)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -134,8 +146,15 @@ class PaletteWindow(QWidget):
         root = QHBoxLayout(self)
 
         screen = QApplication.primaryScreen()
+        # This no longer drives the window's own starting size (see
+        # DEFAULT_WIDTH/DEFAULT_HEIGHT above) - it's just an upper bound on
+        # how tall a single scroll column is allowed to grow if the user
+        # later resizes the window taller than its content needs, so a
+        # column keeps scrolling instead of stretching indefinitely.
         max_column_height = (
-            max(400, screen.availableGeometry().height() - 120) if screen is not None else None
+            int(max(400, screen.availableGeometry().height() - 120) * 1.5)
+            if screen is not None
+            else None
         )
 
         def make_scrollable_column():
@@ -184,16 +203,25 @@ class PaletteWindow(QWidget):
                     column_layout.addWidget(widget)
             column_layout.addStretch()
 
-        # Leftmost column: templates only. Middle column: every other
-        # draggable widget. Rightmost: the existing save buttons (added
-        # further below, unchanged) - three side-by-side groups as requested.
-        template_scroll, template_layout = make_scrollable_column()
-        root.addWidget(template_scroll)
+        def add_vertical_divider():
+            divider = QFrame()
+            divider.setFrameShape(QFrame.VLine)
+            divider.setFrameShadow(QFrame.Sunken)
+            root.addWidget(divider)
 
-        left_right_divider = QFrame()
-        left_right_divider.setFrameShape(QFrame.VLine)
-        left_right_divider.setFrameShadow(QFrame.Sunken)
-        root.addWidget(left_right_divider)
+        # Templates now span two columns (split roughly in half) so more of
+        # them fit on screen at once without one tall column scrolling past
+        # everything else. Then: every other draggable widget. Then: the
+        # existing save buttons (added further below, unchanged).
+        template_scroll_a, template_layout_a = make_scrollable_column()
+        root.addWidget(template_scroll_a)
+
+        add_vertical_divider()
+
+        template_scroll_b, template_layout_b = make_scrollable_column()
+        root.addWidget(template_scroll_b)
+
+        add_vertical_divider()
 
         items_scroll, layout = make_scrollable_column()
         root.addWidget(items_scroll)
@@ -259,12 +287,13 @@ class PaletteWindow(QWidget):
         template_items = [
             ("템플릿: " + spec["label"], DraggableTemplate(spec)) for spec in TEMPLATE_SPECS
         ]
-        add_items(template_layout, template_items)
+        # Split roughly in half - first column gets the extra one when the
+        # count is odd (7 templates -> 4 + 3).
+        split_point = (len(template_items) + 1) // 2
+        add_items(template_layout_a, template_items[:split_point])
+        add_items(template_layout_b, template_items[split_point:])
 
-        middle_right_divider = QFrame()
-        middle_right_divider.setFrameShape(QFrame.VLine)
-        middle_right_divider.setFrameShadow(QFrame.Sunken)
-        root.addWidget(middle_right_divider)
+        add_vertical_divider()
 
         save_col = QVBoxLayout()
         root.addLayout(save_col)
@@ -292,6 +321,19 @@ class PaletteWindow(QWidget):
         self._exe_save_button = exe_save_button
 
         save_col.addStretch()
+
+        # Qt auto-shrinks a top-level window's *first shown* size to fit the
+        # screen when it's sized purely from layout sizeHint (main.py just
+        # calls .show(), no explicit resize) - an explicit resize here
+        # (before main.py's .show() call) is honored as-is instead. Uses
+        # the fixed DEFAULT_WIDTH/DEFAULT_HEIGHT captured from the user's
+        # own preferred size rather than deriving it from screen size or
+        # sizeHint() (the scroll columns' sizeHint() ignores their own
+        # maximumHeight and can't be coaxed into reflecting a taller
+        # window without also permanently pinning minimumHeight - which
+        # previously disabled the window's own edge-drag resize, since Qt
+        # disables resize on any axis where minimumHeight==maximumHeight).
+        self.resize(DEFAULT_WIDTH, DEFAULT_HEIGHT)
 
     def _on_template_save_clicked(self):
         if self._canvas_window is None:
