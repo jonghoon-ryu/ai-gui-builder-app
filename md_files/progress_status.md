@@ -1524,3 +1524,309 @@ minimumHeight 임시 고정 후 해제" 트릭은 완전히 제거하고 `self.r
   `compile_handler`/`bind_handler` 왕복까지 확인, 여러 위젯 일괄 크기맞춤(`_match_selected_sizes`)
   undo도 확인, 그리고 "최근 작업 하나만 기억함"(A를 옮기고 B를 옮기면 A의 이동은 그대로 남음) 원칙도
   확인. `how_to_use.md`의 Ctrl+Z 설명도 갱신.
+
+## "다른 이름으로 저장"/"저장된 틀 불러오기" 추가 (여러 개의 틀 관리) (2026-08-16)
+
+사용자가 남은 4번 항목("완전히 처음부터 시작하기")을 구체화: 단순 초기화보다는 "지금 틀을 이름
+붙여서 저장하고, 나중에 여러 틀 중 골라서 불러오는" 기능을 원함(1·2번 항목은 이번엔 필요 없다고
+확인받음). "회사용"/"집용"처럼 서로 다른 탭 구성을 왔다 갔다 하는 용도.
+
+- **저장 형식**: 기존 `builder_state.json`과 완전히 같은 JSON 스키마. `appData/layouts/<이름>.json`에
+  하나씩 저장(이름 = 파일명, `\/:*?"<>|`와 제어문자는 자동으로 제거됨(`_sanitize_layout_name`) -
+  Windows 파일명에 못 쓰는 문자라서).
+- **"다른 이름으로 저장"**(`CanvasWindow.save_layout_as`): 이름 입력 → 이미 있으면 덮어쓸지 확인 →
+  기존 `_save_state`를 그 경로로 재사용해서 저장. **`STATE_FILE`(=`builder_state.json`, 앱 시작 시
+  자동으로 뜨는 그 파일)은 절대 건드리지 않음** - "틀 저장"과 완전히 독립된 별개 슬롯.
+  `_save_state`가 이미 `target_file` 매개변수를 받게 설계돼 있어서(원래 자동저장용으로 쓰던 것)
+  거의 그대로 재사용함.
+- **"저장된 틀 불러오기"**(`CanvasWindow.load_layout_dialog`): `appData/layouts/`의 `.json` 파일
+  목록을 드롭다운으로 보여줌(하나도 없으면 안내만 뜸) → 고르면 확인창("지금 화면 내용은 틀 저장을
+  안 눌렀으면 사라짐") → `CanvasTabs.load_state(state)`가 **지금 열려 있는 탭을 전부 지우고**
+  (`removeTab(0)` + `deleteLater()` + `remove_tab_color(0)` 반복 - 기존 "탭 삭제" 로직과 동일한
+  방식) 불러온 state로 다시 채움(기존 `_restore_from_state`를 그대로 재사용, 이건 원래 "빈
+  CanvasTabs에 처음 한 번만" 호출되던 걸 재사용 가능하게 확인함). 불러온 뒤에도 `STATE_FILE`은 안
+  바뀌므로, 다음 실행에도 이 틀로 시작하게 하려면 불러온 다음 "틀 저장"을 따로 눌러야 함(문서에
+  명시).
+- 팔레트 오른쪽 칸에 "틀 저장" 바로 아래 두 버튼 추가 (틀 저장 / 다른 이름으로 저장 / 저장된 틀
+  불러오기 / 실행 py 저장 / standalone 실행 파일 저장 순서).
+- 헤드리스 테스트(`phase21_named_layouts.py`, 14개 체크) - 이름 sanitize, 저장 시 `STATE_FILE` 안
+  건드리는지, 덮어쓰기 확인창이 실제로 뜨는지, 불러오기가 실제로 탭을 통째로 교체하는지(불러오기
+  직전에 탭 개수/제목/위젯 텍스트를 일부러 바꿔놓고 불러온 뒤 저장된 값으로 되돌아오는지 확인),
+  저장된 틀이 하나도 없을 때 안내만 뜨고 죽지 않는지까지 확인.
+  - **테스트 작성 중 겪은 문제(교훈)**: 헤드리스 테스트가 출력 하나 없이 무한 행(hang)됐는데, 원인은
+    `save_layout_as`가 끝에서 실제 `QMessageBox.information("저장 완료", ...)` 팝업을 띄우는
+    부분을 mock 안 하고 놓쳤던 것 - `QInputDialog.getText`/`QMessageBox.question`만 mock하고
+    이건 빠뜨림. offscreen 플랫폼에서는 이런 실제 팝업의 `.exec()`가 영원히 안 풀림. `[[feedback-
+    autosave-test-hang]]` 메모리에 이 일반화된 교훈(테스트 대상 메서드가 보여주는 팝업을 전부
+    빠짐없이 mock해야 함, 안 그러면 아무 출력도 없이 그냥 멈춤) 추가해둠.
+
+## "standalone 실행 파일 저장" 버튼 2줄 + 세로로 늘리기 (2026-08-16)
+
+팔레트의 "standalone 실행 파일 저장" 버튼 라벨을 `"standalone\n실행 파일 저장"`(2줄)로 바꾸고
+`setFixedHeight(70)`으로 세로로 늘림(다른 저장 버튼들보다 눈에 띄게 크게). 빌드 중/완료 후 라벨을
+되돌리는 `canvas_window.py`의 `_on_exe_build_finished`도 같은 2줄 문자열로 맞춰야 했음 - 안 그러면
+빌드 한 번 끝날 때마다 버튼이 다시 1줄짜리 원래 텍스트로(높이는 `setFixedHeight`라 유지되지만 글자만)
+되돌아갈 뻔함. 헤드리스로 버튼 텍스트/높이와 두 파일의 문자열이 정확히 일치하는지 확인
+(`phase22_exe_button_two_lines.py`), 실제 앱 스크린샷(클릭 없이 순수 캡처만 - 사용자가 화면을 같이
+쓰고 있어서 이번엔 자동 클릭 테스트를 하지 않음)으로 2줄 표시와 커진 높이 확인.
+
+## `builder_framework/` 폴더 재구성 + 팔레트 크기 저장 + "새 틀 시작하기" (2026-08-16)
+
+바로 위 항목("다른 이름으로 저장"/"저장된 틀 불러오기")에서 쓰던 `appData/layouts/<이름>.json`
+플랫 파일 방식을, 사용자 제안으로 폴더 기반 구조로 다시 정리함. 이어서 두 가지를 추가 확인/구현:
+팔레트 창 크기가 어디에도 저장 안 되고 있던 빠진 부분("팔레트도 쓰다 보면 바뀌는데 저장 안 되는 게
+맞나?"라는 사용자 지적으로 발견), 그리고 "새 틀 시작하기" 버튼.
+
+- **`builder_framework/` 구조**: `BUILDER_FRAMEWORK_DIR = <빌더>/builder_framework/`,
+  기본 틀은 `builder_framework/default/builder_state.json`(`STATE_FILE`), 이름 있는 틀은
+  `builder_framework/<이름>/builder_state.json`(`_named_layout_state_path`) — default와 이름
+  폴더들이 형제 관계로 나란히 있음. "실행 py 저장"/"standalone 실행 파일 저장"의 기본 저장 위치
+  (`EXECUTABLE_PY_DIR`/`STANDALONE_DIR`)도 `DEFAULT_LAYOUT_DIR`(=`builder_framework/default/`)로
+  바꿔서, 한 틀의 화면 구성과 내보낸 실행 파일을 같은 폴더에 모아두게 함(이름 있는 틀 폴더 안에도
+  내보내면 자연히 그 폴더에 모임 — "실행 py 저장" 창을 이름 폴더로 직접 이동해서 저장하면 됨,
+  자동 추적은 하지 않는 단순한 방식으로 결정함). 기존 `appData/layouts/`는 삭제(비어 있었음 —
+  실사용 데이터가 그 방식으로 저장된 적이 없었음), 루트의 `builder_state.json`은 `git mv`로
+  `builder_framework/default/builder_state.json`으로 이동(rename으로 기록되어 히스토리 보존).
+  2026-08-16 이전 내보내기 결과물(`executable_py/`, `standalone/`)은 디스크에 그대로 남아있고
+  코드가 더 이상 그 경로를 참조하지 않음 — 처음엔 "레거시 경로" 상수 2개를 남겨뒀다가, 아무 데서도
+  안 쓰는 죽은 코드라 바로 지움(CLAUDE.md 파일 구성표로 대신 문서화).
+- **팔레트 크기도 함께 저장**: `_save_state`에 `palette_size` 매개변수 추가, `builder_state.json`에
+  `"palette": {"width":.., "height":..}` 키로 저장됨(`window` 키와 같은 자리, 같은 방식). "틀
+  저장"/자동저장(90초 autosave) 모두 `CanvasWindow._current_palette_size()`(→
+  `self.palette_window.width()/height()`)를 읽어서 넘김 — 이러려면 `CanvasWindow`가
+  `PaletteWindow` 인스턴스에 대한 역참조를 알아야 해서, `main.py`에서 두 창을 만든 직후
+  `canvas.palette_window = palette`로 연결함(순환 import 없이, 두 창을 둘 다 아는 유일한 자리인
+  `main.py`에서 배선). 불러올 때(`CanvasTabs.__init__`의 자동 복원, `load_layout_dialog`)는
+  `state.get("palette")`를 읽어서 `PaletteWindow(initial_size=...)`/`palette_window.resize(...)`로
+  반영.
+- **"새 틀 시작하기" 버튼** (팔레트, "저장된 틀 불러오기" 다음 순서): 확인창 후 `CanvasWindow.
+  start_new_layout()`이 `self.tabs.load_state(None)`(탭 전부 지우고 빈 탭 하나만 추가)과
+  `self.palette_window.reset_to_default_size()`(팔레트를 `PaletteWindow.DEFAULT_WIDTH/HEIGHT`로
+  되돌림)를 호출 — 디스크 파일은 안 건드리므로 "틀 저장"을 눌러야 이 빈 상태가 실제로 저장됨.
+- 헤드리스 테스트를 새 구조에 맞게 전면 재작성(`phase21_named_layouts.py`, 22개 체크로 확장 —
+  sanitizer, save-as가 폴더+파일을 만들고 `STATE_FILE`은 안 건드리는지, `default`라는 이름으로는
+  저장을 거부하는지, 덮어쓰기 확인, 불러오기가 탭+팔레트 크기를 동시에 되돌리는지, 저장된 틀이
+  없을 때 안내만 뜨는지, "새 틀 시작하기"가 탭 1개+팔레트 기본 크기로 되돌리는지까지) + 기존
+  `phase1_smoke_test.py`/`phase19_explain_tab_example_button.py`의 하드코딩된 옛 경로도 새 구조에
+  맞게 갱신, 전체 회귀(25개 스크립트) 통과.
+- **실제 데이터로 라이브 검증**: 실행 중이던 빌더를 정상 종료(WM_CLOSE) → `git mv`로 마이그레이션
+  → 재실행 → 두 창(캔버스/팔레트) 정상 표시 확인 → 클릭 없는 패시브 스크린샷(사용자가 화면을 같이
+  쓰고 있어서, 자동 클릭이 사용자의 다른 창을 잘못 건드린 적이 있었던 사고 이후로 이번 세션부터는
+  라이브 검증에서 클릭/포커스 전환을 아예 안 함)으로 팔레트의 6개 버튼 순서(틀 저장/다른 이름으로
+  저장/저장된 틀 불러오기/새 틀 시작하기/실행 py 저장/standalone 2줄 저장)와 캔버스의 실사용 탭
+  (gvf/git/wiki/윈도우 현황/alarm/link/설명)이 마이그레이션 후에도 그대로임을 확인.
+
+**후속 수정 — "다른 이름으로 저장"을 이름 입력 대신 실제 폴더 선택 창으로 (2026-08-16)**: 위에서
+구현한 "다른 이름으로 저장"이 `QInputDialog.getText`로 이름만 받았는데, 사용자가 "저장 위치를
+직접 고를 수 있는 창이 떠야 하는 거 아니냐"고 지적함. 확인 결과 원하는 방식은 "이름 입력 + 저장
+위치는 `builder_framework/` 안에서만 폴더로 고르기"(자유 위치는 아님, `builder_framework/`
+바깥으로 새면 "저장된 틀 불러오기" 목록에서 안 보이게 되므로). `QFileDialog.getExistingDirectory
+(dir=BUILDER_FRAMEWORK_DIR)`로 교체 — 네이티브 폴더 선택 창의 "새 폴더" 버튼으로 새 이름의 폴더를
+만들어 고르거나 기존 폴더를 고르면, **고른 폴더 이름 자체가 틀 이름**이 되고 그 밑에
+`builder_state.json`이 저장됨. 고른 폴더가 `BUILDER_FRAMEWORK_DIR`의 직계 자식이 아니면(더 깊이
+중첩되었거나 바깥) 경고 팝업 후 저장을 거부(`os.path.dirname(chosen_dir) ==
+BUILDER_FRAMEWORK_DIR` 검사) — 중첩을 허용하면 `load_layout_dialog`가 그 폴더를 목록에서 못 찾게
+됨. 이제 이름을 파일명 안전 문자로 걸러주던 `_sanitize_layout_name`은 아무도 안 부르는 죽은 코드가
+돼서 `_LAYOUT_NAME_UNSAFE_CHARS`와 함께 지움(OS 폴더 선택 창이 반환하는 경로는 이미 그 OS에서
+유효한 폴더명이라 별도 검증이 필요 없어짐) — 이제 안 쓰는 `import re`도 같이 정리. 헤드리스
+테스트(`phase21_named_layouts.py`)를 `QFileDialog.getExistingDirectory`를 mock하는 방식으로
+전면 재작성(21개 체크 — 저장/취소/중첩 폴더 거부/`default` 거부/덮어쓰기 확인/불러오기/새 틀
+시작하기), `how_to_use.md`의 "다른 이름으로 저장" 설명도 폴더 선택 흐름으로 갱신.
+
+## "활성 틀(active layout)" 추적 추가 — 모든 수정이 지금 작업 중인 틀 폴더에 저장되도록 (2026-08-16)
+
+사용자가 위 폴더 재구성을 검토하다 지적: "나만의 tool 윈도를 수정하건 위젯 팔레트를 수정하건 수정
+내용이 모두 builder_framework 밑의 사용자가 지정한 디렉토리에 저장되는 거야." 코드를 확인해보니
+실제로는 그렇지 않았음 — `STATE_FILE`이 `builder_framework/default/builder_state.json`으로
+하드코딩되어 있어서, "저장된 틀 불러오기"로 다른 틀(예: "회사용")을 불러와 수정해도 "틀 저장"을
+누르면 그 내용은 항상 `default/`에 저장되고 있었음(코드 주석에도 "the app doesn't track a notion of
+currently active 틀"이라고 의도적 설계로 적혀 있었음 — 이번에 바꾸기로 함). `builder_state.autosave.json`이
+필요한지도 같이 확인 요청받아서, 이건 "틀 저장"과 무관하게 크래시 시 화면에 떠 있던 내용을 살리는
+독립적인 안전망(90초 주기, 앱 루트의 고정 파일 하나)이라고 설명하고 사용자에게 처리 방침을 확인함
+(`AskUserQuestion` 3개: 내보내기 기본 위치도 활성 틀을 따라갈지 / 창 제목에 활성 틀을 표시할지 /
+autosave를 어떻게 할지) — 전부 권장안(예/예/지금처럼 유지)으로 확정.
+
+- **`CanvasWindow._active_layout_name`/`_active_layout_dir`** 신규 추가(`__init__`에서 각각
+  `"default"`/`DEFAULT_LAYOUT_DIR`로 시작) — "지금 편집이 어느 틀 폴더를 향하는지"를 세션 동안
+  하나만 기억하는 상태. `_active_state_file()`이 `os.path.join(self._active_layout_dir,
+  "builder_state.json")`을 돌려주고, `_update_window_title()`이 창 제목을 `f"나만의 tool -
+  {self._active_layout_name}"`으로 갱신함.
+- **갱신 지점 4곳**: `save_layout_as`(저장 성공 시 그 폴더로 전환 - Save As 관용과 동일하게, 이후
+  저장은 방금 저장한 곳을 따라감), `load_layout_dialog`(불러온 틀로 전환), `start_new_layout`(다시
+  `default`로 리셋). `save_template`("틀 저장")은 이제 하드코딩된 `STATE_FILE`이 아니라
+  `self._active_state_file()`에 씀 - 팔레트 크기 포함 모든 필드가 그대로 그 폴더로 감(별도 코드
+  변경 없이 됨 - `_current_palette_size()`를 그대로 넘기던 기존 인자 배선을 안 건드렸으므로).
+- **내보내기 기본 위치도 활성 틀을 따라가도록**: `export_dialog`/`export_exe_dialog`가 하드코딩된
+  `EXECUTABLE_PY_DIR`/`STANDALONE_DIR` 대신 `self._active_layout_dir`를 씀 - 이 두 상수는 이제 아무
+  데서도 안 쓰는 죽은 코드라 지움(모듈 상수 위에 있던 "the app doesn't track a notion of currently
+  active 틀" 설명 주석도 같이 지우고 `_active_layout_dir` 필드 쪽 주석으로 대체).
+- **autosave는 그대로 독립적으로 유지**: `_autosave`는 여전히 고정된 `AUTOSAVE_STATE_FILE`(앱 루트)에
+  만 씀, 활성 틀과 무관 - 어떤 틀을 작업 중이었든 크래시 시점에 화면에 떠 있던 내용을 그대로 살리는
+  게 목적이라 "어느 틀 폴더로 갈지"와는 다른 축의 문제라고 판단(사용자도 권장안으로 승인).
+- **앱 시작 시 활성 틀은 항상 `default`**: `CanvasTabs.__init__`의 자동 복원은 그대로 `STATE_FILE`
+  (`default/`)만 읽음 - "마지막으로 작업하던 틀을 기억해서 거기서 재시작"까지는 이번 범위 밖(이전
+  세션에 사용자가 "완전히 처음부터 시작하기" 관련 1/2번 항목은 필요 없다고 확인한 것과 같은 맥락으로
+  범위를 좁게 유지함).
+- 헤드리스 테스트 신규 작성(`phase23_active_layout_tracking.py`, 21개 체크) - 창 제목 초기값/전환,
+  save-as 이후 "틀 저장"이 새 폴더로 가는지 default 파일은 안 건드리는지, 팔레트 크기 변경도 활성
+  폴더에 반영되는지, 두 내보내기 다이얼로그의 기본 경로(`QFileDialog.getSaveFileName` 호출 인자를
+  직접 캡처해서 확인)가 활성 폴더를 가리키는지, 불러오기로 되돌아간 뒤 "틀 저장"이 그쪽을 따라가는지,
+  "새 틀 시작하기"가 default로 리셋하는지, autosave가 활성 틀과 무관하게 고정 파일에 계속 쓰는지까지.
+  기존 회귀(`phase21`/`phase1`/`phase19`/`phase20`/`phase22`) 전부 재확인, 전체 통과.
+  - **테스트 작성 중 겪은 문제(교훈, `[[feedback-autosave-test-hang]]`과 같은 패턴 재발)**: 새 테스트의
+    한 단계에서 이미 파일이 있는 폴더에 다시 `save_layout_as`를 호출해 덮어쓰기 확인
+    `QMessageBox.question`을 트리거하는데, 그 호출을 mock하지 않고 놓쳐서 또 조용히 무한 행(hang)됨 -
+    `Bash` 타임아웃으로 백그라운드로 넘어간 프로세스를 PID로 찾아 원인이 내가 만든 진단/테스트
+    스크립트임을 확인한 뒤(실제 빌더 GUI 프로세스와는 무관), 사용자에게 종료해도 되는지 물어보고
+    (`Stop-Process`가 auto-mode 분류기에 의해 매번 별도 승인 필요) 정리함 - 이 세션에서만 이 패턴이
+    두 번 반복됨.
+- **실제 앱으로 라이브 검증**: 코드가 바뀌었으므로 기존에 켜져 있던 인스턴스를 WM_CLOSE로 정상
+  종료(우연히 두 개가 동시에 떠 있었음 - venv `pythonw.exe`가 내부적으로 시스템 Python312의
+  `pythonw.exe`를 다시 실행하는 방식으로 보이는 프로세스 쌍이 매번 생김, 실제 창은 항상 후자
+  쪽에만 있고 전자는 창 없는 유휴 프로세스 - 이번에도 같은 패턴 확인, 문제 아님) → 재실행 →
+  `GetWindowText`로 두 창의 실제 제목을 직접 읽어 확인: "나만의 tool - default" / "위젯 팔레트" -
+  실사용 데이터(`builder_framework/default/builder_state.json`)가 정상 로드된 채로 창 제목에 활성
+  틀 이름이 정확히 반영됨을 확인.
+
+## 레거시 내보내기 경로 정리 + 팔레트 저장 위치 재확인 + 저장 버튼 이름/그룹 정리 (2026-08-16)
+
+토큰 소진으로 세션을 끊고 `CronCreate`(일회성, `40 18 16 8 *`)로 예약해뒀다가 refill 후 이어서
+진행한 4개 항목.
+
+**1. `executable_py/`/`standalone/` 정리**: `executable_py/`는 git으로 추적되던 날짜별 예전 내보내기
+결과물 폴더들(`2026_07_26`~`2026_08_12_#7`)이었음 - `CLAUDE.md`가 `2026_07_26/app.py`를 "참고용
+기본 예제"로 명시 언급하고 있어서, 이 파일만 먼저 `git mv`로 `examples/website_link_button/app.py`
+(신규 디렉토리)로 옮겨 보존한 뒤(내용 확인함 - 버튼 1개로 URL 여는 48줄짜리 최소 예제, 사용자가
+그동안 "예제" 버튼 설명에서 계속 언급해온 그 웹사이트 링크 예제와 같은 성격), 나머지는 `git rm -r
+executable_py`로 삭제. `standalone/`은 애초에 `.gitignore`에 통째로 올라가 있어 git 추적 대상이
+아니었음(`git rm`이 "pathspec did not match"로 실패해서 발견) - 그런데 `rm -rf`도 "Device or
+resource busy"로 실패해서 확인해보니 **`standalone/ai_tools.exe`가 실제로 두 프로세스로 실행 중**
+(11:26 AM 시작, 사용자가 직접 내보내서 켜둔 것으로 보이는 실행 파일)이었음 - 이건 이 세션이 만든
+프로세스가 아니라 사용자가 지금 쓰고 있을 가능성이 있는 것이라 물어보지 않고 종료하지 않았고,
+`standalone/` 삭제도 보류함(레거시 정리를 다 못 끝낸 상태로 남음 - 다음에 사용자가 그 실행 파일을
+안 쓰는 걸 확인해주면 마저 지우면 됨). Windows 시작프로그램 레지스트리(`HKCU\...\Run`)에 이 경로를
+가리키는 항목이 없는 것도 미리 확인해서, 지워도 시작프로그램이 깨지진 않는다는 것까진 확인해둠.
+`CLAUDE.md`의 핵심 원칙 2번과 파일 구성표를 새 예제 경로에 맞게 갱신. 정리 중 `.gitignore`에
+`standalone/` 통째 제외 규칙만 있고 일반 `*.exe` 규칙이 없던 것도 발견 - `builder_framework/
+<이름>/`으로 내보내기 기본 위치가 바뀌면서 exe가 이제 `standalone/` 밖(예:
+`builder_framework/default/ai_tools.exe`)에도 생기는데 이게 그대로 `git status`에 안 잡히던 걸
+`.gitignore`에 `*.exe` 한 줄 추가해서 막음(용량이 큰 바이너리를 실수로 커밋하지 않기 위함 -
+CLAUDE.md에 이미 명시된 의도와 일치, `.py` 내보내기는 계속 추적 대상으로 둠).
+
+**2. 위젯 팔레트 저장 위치 재확인**: 사용자가 이전 세션에서 이미 활성 틀 추적으로 해결됐다고 보고한
+뒤에도 "그래도 팔레트 수정하면 `C:\repository\ai-gui-builder-app` 밑에 저장되는 것처럼 보인다,
+디폴트를 덮어쓰는 거 아니냐"고 재차 확인 요청함 - `palette_window.py`를 처음부터 끝까지 다시 읽고
+`canvas_window.py`에서 `BASE_DIR`/`palette_window.width()/height()`를 참조하는 모든 지점을 grep으로
+전수 확인한 결과, **버그 없음**을 확인: `palette_window.py` 자체는 파일 I/O를 전혀 하지 않고(리사이즈
+핸들러도, `QSettings`도 없음), 팔레트 크기가 디스크에 쓰이는 경로는 오직 `CanvasWindow.
+_current_palette_size()` → `_save_state(..., target_file=...)` 하나뿐이며, 그 `target_file`은
+호출 지점마다 이미 활성 틀 추적을 따라감(`save_template`→활성 틀 폴더, `save_layout_as`→방금 고른
+폴더, `_autosave`→고정된 별도 파일). 레포 루트(`C:\repository\ai-gui-builder-app`)에 뭔가 쓰이는
+것처럼 보인 원인은 `builder_state.autosave.json`(90초 크래시 안전망, 활성 틀과 무관하게 항상 이
+경로 하나에만 씀, 팔레트 크기도 포함됨)일 가능성이 높다고 판단 - **이 파일과 `builder_framework/
+default/builder_state.json`은 서로 다른 파일이고, autosave 파일 내용이 default의 실제 저장 파일에
+반영되려면 크래시 후 "복구할까요?" 팝업에서 예를 누르고 그 뒤에 사용자가 "틀 저장"을 직접 눌러야만
+한다(자동으로 덮어쓰지 않음)**는 점을 `how_to_use.md`에 파일 구성표 새 행으로 명확히 문서화함.
+코드 변경은 없었고(재확인 결과 이미 이전 세션의 활성 틀 추적 수정으로 해결되어 있었음), 기존
+`phase23_active_layout_tracking.py`(21개 체크, 특히 "named 폴더에서 팔레트 리사이즈 후 틀 저장 →
+default 파일은 안 건드림" 체크)를 재실행해서 여전히 통과하는 것으로 재확인.
+
+**3. "다른 이름으로 저장" → "다른 이름으로 틀 저장" 이름 변경**: `palette_window.py`의 버튼
+라벨과 `canvas_window.py`의 관련 다이얼로그 제목/안내 문구/주석(4곳)을 모두 바꿈. `how_to_use.md`
+전체에서 이 버튼을 가리키는 텍스트(8곳, `replace_all`)도 함께 갱신 - `progress_status.md`의 과거
+로그 항목들은 당시 실제 라벨을 그대로 서술한 역사 기록이라 손대지 않음(이 프로젝트의 기존 컨벤션).
+
+**4. 저장 버튼 그룹 재배치**: `palette_window.py`의 `save_col`을 세 그룹으로 재구성 - **틀 저장 /
+다른 이름으로 틀 저장 / 저장된 틀 불러오기**(그룹 1) — 가로 구분선(`QFrame.HLine`+`Sunken`, 팔레트
+안 다른 항목 구분선과 같은 스타일로 통일) — **새 틀 시작하기**(그룹 2) — 가로 구분선 —
+**실행 py 저장 / standalone 실행 파일 저장**(그룹 3, 기존 2줄 큰 버튼 유지). 그룹 내부 버튼 간격은
+기존 30px에서 20px로 살짝 줄이고, 구분선 전후로 14px씩 둬서 그룹 사이가 그룹 내부보다 시각적으로
+더 벌어지게 함.
+
+헤드리스 테스트 신규 작성(`phase24_save_button_rename_and_grouping.py`, 5개 체크) - 새 라벨 존재
+확인, 옛 라벨(정확히 일치, "다른 이름으로 틀 저장"의 부분 문자열이 아니라 완전히 옛날 문구 자체)이
+남아있지 않은지, `save_col` 레이아웃을 순서대로 순회해서 버튼 8개 + 구분선 2개가 정확히 요청받은
+순서와 일치하는지 확인. 전체 회귀(scratchpad의 phase*.py 26개) 재실행 통과. 코드가 바뀌었으므로
+실행 중이던 빌더 인스턴스를 WM_CLOSE로 정상 종료 후 재실행, `GetWindowText`로 창 제목 재확인 +
+패시브 스크린샷으로 팔레트의 새 그룹/구분선/새 버튼 라벨이 정확히 요청한 모양대로 보이는 것과
+"나만의 tool - default" 창의 실사용 탭(gvf/git/wiki/윈도우 현황/alarm/link/설명)이 여전히 정상인
+것을 눈으로 확인.
+
+## `standalone/` 최종 삭제 + `pick_startup_file` 기본 경로 후속 수정 (2026-08-16)
+
+위 항목의 "1번" 마무리: 사용자가 "안 쓰는 거니까 종료하고 지워"라고 확인해줘서, 실행 중이던
+`standalone/ai_tools.exe` 두 프로세스(11:26 AM부터 떠 있던 것)를 `GetWindowText`로 실제 창이 있는
+쪽(PID 8740, 제목 "My App")만 WM_CLOSE로 정상 종료 - 나머지 하나(PID 6808)는 창이 없는 PyInstaller
+onefile 부트로더였는지 앞의 프로세스가 끝나자 같이 종료됨. 두 프로세스 모두 사라진 것을 확인한 뒤
+`standalone/`을 `rm -rf`로 삭제(애초에 `.gitignore`에 있어 git에는 흔적이 안 남음).
+
+**삭제하다가 발견한 후속 버그**: `code_binder.py`(빌더 자체가 쓰는 실제 함수)와 `exporter.py`의
+`HEADER_TEMPLATE`(모든 내보내기 결과물에 그대로 박히는 템플릿 문자열) 양쪽에 있는
+`pick_startup_file(parent)`이 `os.path.join(os.path.dirname(os.path.abspath(__file__)),
+"standalone")`을 파일 선택 창의 기본 위치로 하드코딩하고 있었음 - `standalone/`을 지운 지금은
+이 경로가 더 이상 존재하지 않아서, "설명" 탭의 "시작 프로그램 등록"/"삭제" 버튼을 누르면 파일 선택
+창이 엉뚱한(존재하지 않는) 위치에서 열리게 됨. 두 파일 다 `"builder_framework"`로 바꿔서 고침 -
+`code_binder.py` 쪽(빌더 자신의 위치 기준)은 항상 실존하는 `builder_framework/`로 정확히 맞고,
+`exporter.py`의 템플릿 쪽(내보낸 앱 자신의 위치 기준)은 내보낸 스크립트 옆에 `builder_framework/`가
+없는 경우가 많아 완벽하진 않지만(애초에 standalone/도 exported 위치 기준으로는 마찬가지로 대부분
+안 맞았던 값이라 이번에 새로 생긴 문제는 아님), 적어도 삭제된 걸 참조하던 하드코딩은 없앰 - 두
+파일의 동일 로직은 항상 같이 고쳐야 한다는 이 프로젝트의 기존 컨벤션대로 함께 수정.
+
+헤드리스 테스트 신규 작성(`phase25_pick_startup_file_default_dir.py`, 5개 체크) - `code_binder.py`
+쪽이 실제로 `builder_framework/`를 기본값으로 넘기는지, `exporter.HEADER_TEMPLATE` 문자열 안에
+`"standalone"` 리터럴이 더 이상 없는지, **실제로 `generate_source`가 만든 소스를 `exec`해서 진짜
+함수 객체로 호출**해 내보낸 스크립트 자신의 위치 기준으로 올바르게 `builder_framework/`를 계산하는지
+(`app.py` 위치를 임의로 지정해서 그 옆의 `builder_framework/`가 나오는지)까지 확인. `how_to_use.md`
+전체에서 남아있던 `standalone/` 언급(시작 프로그램 등록/삭제 버튼 설명, 화이트리스트 함수 목록,
+실습 예제 8단계, 파일 구성 요약)을 전부 새 경로/과거형 서술로 갱신.
+
+## `appData/`(alarm/git/gvf)도 활성 틀을 따라가도록 (2026-08-16)
+
+사용자가 `C:\repository\ai-gui-builder-app\appData`의 위치가 맞는지 재차 확인 요청함 - 확인해보니
+`alarm_widget.py`/`git_widget.py`/`gvf_widget.py` 세 파일 모두 `_STATE_DIR = os.path.dirname(
+os.path.abspath(__file__))`(빌더 실행 시 이 세 소스 파일이 있는 레포 루트로 고정)로 계산하고 있어서,
+오늘 만든 "활성 틀" 추적(`builder_state.json`/팔레트 크기)과 달리 **어떤 틀이 활성화돼 있든 항상
+같은 고정 위치**를 보고 있었음 - 일관성이 깨져있는 게 맞았음. `AskUserQuestion`으로 확인한 결과
+"builder_framework/<활성 틀>/appData/로 이동"을 선택함(공유 유지 대신 완전 분리를 원함).
+
+- **각 위젯 모듈에 `set_state_dir(path)` 추가**: 기존 `_STATE_DIR`/`_APP_DATA_DIR`/
+  `ALARM_STATE_FILE`(또는 `GIT_PANEL_STATE_FILE`/`GVF_STATE_FILE`)/레거시 경로 상수들을 전역
+  변수 재할당으로 갱신하는 함수. 기존 내부 함수(`_load_alarm_state`/`_save_alarm_state` 등)는 이
+  전역 이름들을 호출 시점마다 새로 조회하는 방식이라(파이썬 전역 조회는 매번 동적) 함수 본문은 전혀
+  안 건드려도 됨 - 재할당만으로 이후의 모든 읽기/쓰기가 새 경로를 따라감. exported standalone 앱은
+  이 함수를 절대 호출하지 않으므로(그런 개념 자체가 없음) 원래의 frozen/스크립트 기준 기본값을
+  그대로 유지함 - `exporter.py`가 각 위젯 소스를 파일째로 그대로 임베드하는 방식이라 이 함수도 같이
+  딸려 들어가지만 아무도 안 부르니 무해함.
+- **`canvas_window.py`에 `_apply_active_layout_state_dir(path)`** 추가 - 세 모듈의 `set_state_dir`를
+  한 번에 호출하는 헬퍼. 호출 지점 4곳(전부 "위젯이 (재)생성되기 *전*"이어야 함 - 패널 생성자가
+  생성 시점에 상태 파일을 읽으므로): `CanvasWindow.__init__`에서 `CanvasTabs()` 생성 **전**(항상
+  `DEFAULT_LAYOUT_DIR`), `save_layout_as`(새로 고른 폴더로), `load_layout_dialog`에서
+  `self.tabs.load_state(state)` **전**(불러온 틀 폴더로), `start_new_layout`(다시
+  `DEFAULT_LAYOUT_DIR`로).
+- **`save_layout_as`에 `_copy_app_data_snapshot(src, dest)` 추가**: 새 폴더로 전환하기 *전에*, 기존
+  활성 폴더의 `appData/`가 있으면 `shutil.copytree(dirs_exist_ok=True)`로 새 폴더에 통째로 복사해둠
+  - `builder_state.json`이 save-as 시점에 "지금까지의 전체 내용"을 스냅샷하는 것과 같은 원칙(이후
+  수정분만 새 위치로 가는 게 아니라, 그 시점까지 쌓인 alarm/git/gvf 데이터도 함께 가져감).
+  `load_layout_dialog`/`start_new_layout`은 복사가 필요 없음 - 위젯이 새로 생성되면서 그 폴더에
+  이미 있는(또는 없는) 데이터를 그대로 읽어들이는 것 자체가 "전환"이라서.
+- **실제 데이터 마이그레이션**: 레포 루트 `appData/`(alarm_state.json 빈 배열, git_panel_state.json
+  6쌍 중 3쌍 채워짐, gvf_state.json의 acquisition 값들 - 전부 이 세션 이전부터 쌓여있던 진짜
+  사용자 데이터)를 `git mv`로 `builder_framework/default/appData/`로 옮김(파일별 rename으로 히스토리
+  보존, 빈 `appData/` 디렉토리는 정리). 실행 중이던 빌더를 WM_CLOSE로 정상 종료 → 마이그레이션 →
+  재실행 → 창 제목 "나만의 tool - default" 정상, 옮겨진 3개 파일 내용을 직접 읽어서 마이그레이션
+  전과 동일함(빈 알람 목록, git 3쌍, gvf acquisition 값들 그대로)을 확인 → 패시브 스크린샷으로 gvf
+  탭이 정상 렌더링되는 것까지 확인. `[[project-appdata-tracked]]` 메모리도 새 경로로 갱신.
+- 헤드리스 테스트 신규 작성(`phase26_appdata_follows_active_layout.py`, 17개 체크) - 시작 시 세
+  모듈 모두 default를 보는지, 실제 `AlarmClockPanel`을 `load_state`로 진짜 생성해서 그 패널이 보는
+  경로가 활성 틀을 따라가는지, save-as가 스냅샷 복사 + 전환을 모두 하는지, 전환 후 새 폴더에서의
+  수정이 default 쪽 파일을 안 건드리는지, "저장된 틀 불러오기"로 default에 돌아오면 원래 데이터를
+  다시 읽어오는지(중간에 이름있는 틀에서 쓴 내용과 섞이지 않는지), "새 틀 시작하기"도 default로
+  리셋하는지까지. 전체 회귀(scratchpad phase*.py 29개) 재실행 통과.
+  - **테스트 작성 중 겪은 문제 2건(교훈)**: (1) `_save_alarm_state`는 직렬화 전 in-memory 형식(문자열
+    아닌 실제 `QDateTime`)을 기대하는데 테스트에서 문자열을 그대로 넣어서 `AttributeError`로 바로
+    터짐 - `QDateTime.fromString(...)`으로 고침. (2) "저장된 틀 불러오기"로 `default`를 선택하는
+    단계에서, 이 세션 동안 `default`의 `builder_state.json`을 한 번도 실제로 저장한 적이 없어서
+    `_load_state_file`이 `None`을 반환 → `QMessageBox.critical`이 안 mock된 채 호출되어 또
+    offscreen에서 조용히 무한 행(hang)됨(`[[feedback-autosave-test-hang]]`과 같은 패턴, 이 세션에서
+    세 번째 반복) - 테스트 흐름에 `win.save_template()`을 실제로 한 번 넣어 default 파일이 진짜
+    존재하게 만들고, 안전망으로 `QMessageBox.critical`도 전역 mock에 추가해서 고침.
