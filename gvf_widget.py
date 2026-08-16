@@ -14,6 +14,7 @@ from PySide6.QtCore import QTime, Qt
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QFileDialog,
     QFrame,
     QGroupBox,
@@ -93,7 +94,7 @@ class _DigitalTimeBox(QFrame):
             label.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
             label.setStyleSheet(
                 "background-color: transparent; color: #4be36a;"
-                " font-family: Consolas, monospace; font-size: 16px;"
+                " font-family: Consolas, monospace; font-size: 14px;"
             )
             layout.addWidget(label)
         # setFixedWidth(고정)을 써야 함 - setMinimumWidth만 쓰면 이 위젯이 유일하게
@@ -143,8 +144,11 @@ class _DisplayRow(QFrame):
         )
         self.return_button.setFixedSize(*button_size)
 
+        # 오른쪽으로만 10% 늘어나도록(왼쪽 끝 위치는 그대로) - 폭만 키우고
+        # HBoxLayout 안에서 이 위젯 뒤에 오는 반납 버튼이 그만큼 밀려남.
+        owned_button_size = (int(button_size[0] * 1.1), button_size[1])
         self.owned_button = QPushButton("소유중", self)
-        self.owned_button.setFixedSize(*button_size)
+        self.owned_button.setFixedSize(*owned_button_size)
         layout.addWidget(self.owned_button)
         layout.addWidget(self.return_button)
 
@@ -201,7 +205,8 @@ class FpgaAcquisitionPanel(QWidget):
 
     맨 위 "아이디" 문자열 입력창(`QLineEdit`), 그 아래 "명령어 입력 디렉토리" 경로
     입력(git 탭의 local 디렉토리 입력창과 같은 방식 - 폴더 아이콘을 누르면 Windows
-    폴더 선택 창이 뜸), "FPGA 획득 마지막 시도" 시간 입력(`QTimeEdit`), "FPGA 취득
+    폴더 선택 창이 뜸), "FPGA 획득 마지막 시도" 시간 입력(`QTimeEdit`) + 그 오른쪽에
+    "자동 시간 연장" 체크 박스("max FPGA 취득"과 오른쪽 가장자리를 맞춤), "FPGA 취득
     간격"(분 단위, 기본 120분, 스핀박스로 조절 가능)과 "max FPGA 취득"(최솟값 1,
     기본값 1, 스핀박스로 조절 가능)이 한 줄에, "FPGA 대기열 삭제" 버튼, 맨 아래
     시작/중지 버튼 한 쌍까지 일곱 줄만 잡아둔 상태 - 실제로 아이디를 어디에
@@ -247,6 +252,13 @@ class FpgaAcquisitionPanel(QWidget):
         self.last_attempt_time.setFixedHeight(26)
         last_try_row.addWidget(self.last_attempt_time)
         last_try_row.addStretch(1)
+        # Flush right the same way "max FPGA 취득" is flush right on the row
+        # below (addStretch(1) then nothing else follows) - since both rows
+        # share the same QGroupBox content width/margins, hugging both to
+        # their own row's right edge makes them land at the same x with no
+        # manual pixel math needed.
+        self.auto_extend_checkbox = QCheckBox("자동 시간 연장", group)
+        last_try_row.addWidget(self.auto_extend_checkbox)
         form.addLayout(last_try_row)
 
         # 한 줄에 label 2개 + spinbox 2개를 모두 넣어야 해서(요청: "max FPGA 취득"을
@@ -299,6 +311,7 @@ class FpgaAcquisitionPanel(QWidget):
         self._restore_state()
         self.id_edit.editingFinished.connect(self._save_state)
         self.last_attempt_time.editingFinished.connect(self._save_state)
+        self.auto_extend_checkbox.toggled.connect(lambda _checked: self._save_state())
         self.interval_minutes.valueChanged.connect(lambda _value: self._save_state())
         self.max_fpga_count.valueChanged.connect(lambda _value: self._save_state())
         self.command_dir_edit.editingFinished.connect(self._save_state)
@@ -311,6 +324,8 @@ class FpgaAcquisitionPanel(QWidget):
             saved_time = QTime.fromString(state["last_attempt_time"], "HH:mm:ss")
             if saved_time.isValid():
                 self.last_attempt_time.setTime(saved_time)
+        if "auto_extend" in state:
+            self.auto_extend_checkbox.setChecked(state["auto_extend"])
         if "interval_minutes" in state:
             self.interval_minutes.setValue(state["interval_minutes"])
         if "max_fpga_count" in state:
@@ -324,6 +339,7 @@ class FpgaAcquisitionPanel(QWidget):
             {
                 "id": self.id_edit.text(),
                 "last_attempt_time": self.last_attempt_time.time().toString("HH:mm:ss"),
+                "auto_extend": self.auto_extend_checkbox.isChecked(),
                 "interval_minutes": self.interval_minutes.value(),
                 "max_fpga_count": self.max_fpga_count.value(),
                 "command_dir": self.command_dir_edit.text(),
@@ -408,7 +424,8 @@ class FpgaLoadingPanel(QWidget):
         # 폭이 캔버스 폭을 크게 초과해서(978px vs 794px 가용), 4개 열이 모두
         # 들어가도록 32px까지 줄였다가, "간격이 너무 좁다"는 요청으로 30% 늘림
         # (다른 요소들(숫자 입력칸 등) 폭을 줄여서 확보한 여유를 여기로 돌림).
-        row.setSpacing(29)
+        # 이후 다시 "50% 더 벌려달라"는 요청으로 29 → 44(반올림)로 늘림.
+        row.setSpacing(44)
 
         version_col = QVBoxLayout()
         version_col.setSpacing(2)
@@ -455,7 +472,9 @@ class FpgaLoadingPanel(QWidget):
 
         self.start_button = QPushButton("시작", group)
         start_size = self.start_button.sizeHint()
-        # 세로 길이는 요청으로 기존(자연 크기의 3배)의 2배인 자연 크기의 6배로 키움.
+        # "지금의 2배"(자연 크기의 12배) 요청이 있었으나, 현재 창 크기 안에서는
+        # 버튼이 다 안 들어가고 잘려서 사용자가 이 변경은 보류하기로 함 - 기존
+        # 6배 그대로 유지.
         self.start_button.setFixedSize(int(start_size.width() * 3), int(start_size.height() * 6))
         row.addWidget(self.start_button, 0, Qt.AlignmentFlag.AlignVCenter)
 

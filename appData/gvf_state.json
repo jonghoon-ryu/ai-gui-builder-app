@@ -1,0 +1,10 @@
+{
+  "acquisition": {
+    "id": "",
+    "last_attempt_time": "11:35:38",
+    "auto_extend": true,
+    "interval_minutes": 120,
+    "max_fpga_count": 1,
+    "command_dir": ""
+  }
+}
