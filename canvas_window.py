@@ -423,10 +423,20 @@ class CanvasPage(QWidget):
         self._rubber_band = QRubberBand(QRubberBand.Shape.Rectangle, self)
         self._rubber_band_origin = None
         self._radio_groups = {}  # group id -> QButtonGroup
-        # Single-slot delete undo (not a full undo/redo stack - see
-        # md_files/future_work_for_poor_developer.md item 8): only the most
-        # recent delete can be undone, and doing so consumes this slot.
-        self._last_deleted = None
+        # Single-slot undo (not a full multi-step undo/redo stack): only the
+        # most recent action can be undone, and doing so consumes this slot -
+        # a new action (of any kind) overwrites whatever was here before.
+        # `{"type": "delete", "entries": [...]}` for a cascade-delete
+        # (restores by recreating the widgets from scratch via
+        # restore_widget - see _undo_last_action) or `{"type": "edit",
+        # "entries": [...]}` for a move/resize/rename/color/font/behavior/
+        # batch-align change (restores by writing the snapshotted values
+        # back onto the *same*, still-alive widgets - see
+        # _restore_entry_in_place). Both branches share the same per-widget
+        # snapshot shape (_snapshot_entry).
+        self._last_action = None
+        self._drag_undo_entries = None
+        self._resize_undo_entry = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._selection_overlay = _SelectionOverlay(self)
         self._selection_overlay.setGeometry(self.rect())
@@ -576,7 +586,7 @@ class CanvasPage(QWidget):
             self._paste_clipboard()
             return
         if event.matches(QKeySequence.StandardKey.Undo):
-            self._undo_last_delete()
+            self._undo_last_action()
             return
         if event.key() in self._ARROW_KEY_DELTAS and self._selected_ids:
             self._nudge_selected_widgets(event.key(), event.modifiers())
@@ -608,16 +618,127 @@ class CanvasPage(QWidget):
             widget.move(new_pos)
         self._refresh_selection_overlay()
 
+    def _snapshot_entry(self, widget_id):
+        """Everything needed to either recreate this widget from scratch
+        (delete-undo) or write its state back onto the still-alive widget
+        (edit-undo) - the same shape `_delete_selected_widgets` always
+        snapshotted, just factored out so every other undoable action can
+        reuse it instead of re-deriving its own subset of fields."""
+        entry = self.entries.get(widget_id)
+        if entry is None:
+            return None
+        widget = entry["widget"]
+        return {
+            "id": widget_id,
+            "kind": entry["kind"],
+            "x": widget.pos().x(),
+            "y": widget.pos().y(),
+            "width": widget.width(),
+            "height": widget.height(),
+            "instruction": entry["instruction"],
+            "code": entry["code"],
+            "text": _widget_text(widget),
+            "color": entry.get("color"),
+            "font_family": entry.get("font_family"),
+            "font_size": entry.get("font_size"),
+            "group": entry.get("group"),
+            "no_border": entry.get("no_border", False),
+            "anchor": entry.get("anchor"),
+            "parent_id": entry.get("parent_id"),
+            "checked": (widget.isChecked() if entry["kind"] in CHECKABLE_KINDS else None),
+        }
+
+    def _push_edit_undo(self, widget_ids):
+        """Call this immediately *before* applying a move/resize/rename/
+        color/font/behavior/batch-align change, so Ctrl+Z can put the given
+        widgets back exactly as they were. Single-slot (see `_last_action`'s
+        docstring at __init__) - overwrites whatever was previously
+        undoable, delete included."""
+        entries = [
+            snap for wid in widget_ids if (snap := self._snapshot_entry(wid)) is not None
+        ]
+        if entries:
+            self._last_action = {"type": "edit", "entries": entries}
+
+    def _apply_behavior_code(self, entry, instruction, code):
+        """Compiles/binds `code` onto `entry`'s widget kind's signal, or -
+        if `code` is empty - just disconnects whatever was bound without
+        connecting a replacement (a widget can go from "has a behavior" to
+        "has none" via edit-undo, which `_create_widget`'s equivalent logic
+        never needs to handle since a freshly-created widget starts with no
+        prior handler to disconnect). Shared by the "동작 설정" save path and
+        the edit-undo restore path so they can't drift apart."""
+        widget = entry["widget"]
+        if code:
+            try:
+                bound_handler = compile_handler(code, self)
+            except HandlerCompileError:
+                return
+            bind_handler(widget, entry["kind"], bound_handler, entry.get("handler"))
+            entry["handler"] = bound_handler
+        elif entry.get("handler") is not None:
+            signal = getattr(widget, SIGNAL_BY_KIND[entry["kind"]])
+            try:
+                signal.disconnect(entry["handler"])
+            except (RuntimeError, TypeError):
+                pass
+            entry["handler"] = None
+        entry["instruction"] = instruction
+        entry["code"] = code
+
+    def _restore_entry_in_place(self, data):
+        """The edit-undo counterpart to `restore_widget` - writes a
+        snapshot's values back onto the *same*, still-existing widget
+        instead of recreating it (the widget was never destroyed, only
+        moved/resized/recolored/renamed/re-fonted/re-behaviored). A no-op if
+        the widget was deleted since the snapshot was taken (nothing left to
+        restore onto)."""
+        entry = self.entries.get(data["id"])
+        if entry is None:
+            return
+        widget = entry["widget"]
+
+        widget.move(data["x"], data["y"])
+        widget.resize(data["width"], data["height"])
+
+        text = data.get("text")
+        if hasattr(widget, "setText"):
+            widget.setText(text or "")
+        elif hasattr(widget, "setTitle"):
+            widget.setTitle(text or "")
+        entry["text"] = text
+
+        color = data.get("color")
+        entry["color"] = color
+        if color:
+            widget.setAttribute(Qt.WA_StyledBackground, True)
+            _apply_scoped_background(widget, color)
+        else:
+            widget.setStyleSheet("")
+
+        font_family = data.get("font_family")
+        font_size = data.get("font_size")
+        entry["font_family"] = font_family
+        entry["font_size"] = font_size
+        if font_family or font_size:
+            font = widget.font()
+            if font_family:
+                font.setFamily(font_family)
+            if font_size:
+                font.setPointSize(font_size)
+            widget.setFont(font)
+
+        if entry["kind"] in CHECKABLE_KINDS and data.get("checked") is not None:
+            widget.setChecked(data["checked"])
+
+        if data.get("code", "") != entry.get("code", ""):
+            self._apply_behavior_code(entry, data.get("instruction") or "", data.get("code") or "")
+
     def _delete_selected_widgets(self):
         """Deletes every selected widget, first snapshotting enough to
         restore them (id, kind, geometry, "동작 설정" code, styling, radio
-        group/anchor) into `self._last_deleted` so Ctrl+Z can bring back
-        *this* delete specifically - losing a widget's connected behavior
-        code to one misclick was the single most painful gap here, more so
-        than move/resize/color mistakes which are trivially redone by hand
-        (see md_files/future_work_for_poor_developer.md item 8, which
-        deliberately scopes this to delete-only rather than a full
-        undo/redo stack).
+        group/anchor) as the undoable last action, so Ctrl+Z can bring back
+        *this* delete specifically.
 
         Deleting a `rect_group` cascades to its children (decision A) - a
         container's kids are Qt-owned by it, so leaving them out of the
@@ -641,65 +762,51 @@ class CanvasPage(QWidget):
             ids_to_delete, key=lambda wid: self.entries[wid].get("parent_id") is not None
         )
 
-        snapshot = []
-        for widget_id in parent_first_ids:
-            entry = self.entries.get(widget_id)
-            if entry is None:
-                continue
-            widget = entry["widget"]
-            snapshot.append(
-                {
-                    "id": widget_id,
-                    "kind": entry["kind"],
-                    "x": widget.pos().x(),
-                    "y": widget.pos().y(),
-                    "width": widget.width(),
-                    "height": widget.height(),
-                    "instruction": entry["instruction"],
-                    "code": entry["code"],
-                    "text": _widget_text(widget),
-                    "color": entry.get("color"),
-                    "font_family": entry.get("font_family"),
-                    "font_size": entry.get("font_size"),
-                    "group": entry.get("group"),
-                    "no_border": entry.get("no_border", False),
-                    "anchor": entry.get("anchor"),
-                    "parent_id": entry.get("parent_id"),
-                    "checked": (widget.isChecked() if entry["kind"] in CHECKABLE_KINDS else None),
-                }
-            )
-        self._last_deleted = snapshot or None
+        snapshot = [
+            snap for wid in parent_first_ids if (snap := self._snapshot_entry(wid)) is not None
+        ]
+        self._last_action = {"type": "delete", "entries": snapshot} if snapshot else None
 
         for widget_id in reversed(parent_first_ids):
             self._remove_widget(widget_id)
 
-    def _undo_last_delete(self):
-        if not self._last_deleted:
+    def _undo_last_action(self):
+        """Undoes whichever action (delete, or a move/resize/rename/color/
+        font/behavior/batch-align edit) is currently in the single undo
+        slot - see `_last_action`'s docstring at __init__ for why this is
+        one slot rather than a full stack."""
+        if not self._last_action:
             return
-        restored_ids = set()
-        for data in self._last_deleted:
-            self.restore_widget(
-                data["kind"],
-                data["id"],
-                data["x"],
-                data["y"],
-                data["instruction"],
-                data["code"],
-                data["text"],
-                data["color"],
-                data["width"],
-                data["height"],
-                data.get("font_family"),
-                data.get("font_size"),
-                data.get("group"),
-                data.get("no_border", False),
-                data.get("checked"),
-                data.get("anchor"),
-                data.get("parent_id"),
-            )
-            restored_ids.add(data["id"])
-        self._last_deleted = None
-        self._selected_ids = restored_ids
+        action_type = self._last_action["type"]
+        entries = self._last_action["entries"]
+
+        if action_type == "delete":
+            for data in entries:
+                self.restore_widget(
+                    data["kind"],
+                    data["id"],
+                    data["x"],
+                    data["y"],
+                    data["instruction"],
+                    data["code"],
+                    data["text"],
+                    data["color"],
+                    data["width"],
+                    data["height"],
+                    data.get("font_family"),
+                    data.get("font_size"),
+                    data.get("group"),
+                    data.get("no_border", False),
+                    data.get("checked"),
+                    data.get("anchor"),
+                    data.get("parent_id"),
+                )
+        else:  # "edit"
+            for data in entries:
+                self._restore_entry_in_place(data)
+
+        self._last_action = None
+        self._selected_ids = {data["id"] for data in entries}
         self._refresh_selection_overlay()
 
     def _remove_widget(self, widget_id):
@@ -1071,6 +1178,7 @@ class CanvasPage(QWidget):
                 self._resize_mode = mode
                 self._resize_start_global = event.globalPosition().toPoint()
                 self._resize_start_geom = obj.geometry()
+                self._resize_undo_entry = self._snapshot_entry(obj.toolTip())
                 return True
 
             # A plain click alone must never move anything - the widget has
@@ -1103,6 +1211,12 @@ class CanvasPage(QWidget):
 
                 if not self._drag_moved:
                     self._drag_moved = True
+                    # Snapshotted *before* any of the container-lift/group
+                    # logic below touches parent or position, so an undo
+                    # restores each widget to its real original parent and
+                    # local position - not the page-space one it's
+                    # temporarily lifted to for the duration of the drag.
+                    self._drag_undo_entries = [self._snapshot_entry(obj.toolTip())]
                     if obj.parentWidget() is not self:
                         # A container child is temporarily lifted to the page
                         # for the duration of the drag - clamping/snapping
@@ -1146,6 +1260,7 @@ class CanvasPage(QWidget):
                             if other_entry.get("parent_id") in self._selected_ids:
                                 continue
                             other_widget = other_entry["widget"]
+                            self._drag_undo_entries.append(self._snapshot_entry(wid))
                             if other_widget.parentWidget() is not self:
                                 page_pos = other_widget.mapTo(self, QPoint(0, 0))
                                 other_widget.setParent(self)
@@ -1191,6 +1306,9 @@ class CanvasPage(QWidget):
 
         if event_type == QEvent.Type.MouseButtonRelease:
             if obj is self._resize_widget:
+                if self._resize_undo_entry is not None and obj.geometry() != self._resize_start_geom:
+                    self._last_action = {"type": "edit", "entries": [self._resize_undo_entry]}
+                self._resize_undo_entry = None
                 self._resize_widget = None
                 self._resize_mode = None
                 self._resize_start_global = None
@@ -1200,11 +1318,14 @@ class CanvasPage(QWidget):
             if obj is self._drag_widget:
                 was_dragged = self._drag_moved
                 if was_dragged:
+                    if self._drag_undo_entries:
+                        self._last_action = {"type": "edit", "entries": self._drag_undo_entries}
                     self._resolve_drop_parent(obj)
                     for wid in self._drag_group_ids:
                         other_entry = self.entries.get(wid)
                         if other_entry is not None:
                             self._resolve_drop_parent(other_entry["widget"])
+                self._drag_undo_entries = None
                 self._drag_widget = None
                 self._drag_start_global = None
                 self._drag_start_widget_pos = None
@@ -1380,11 +1501,12 @@ class CanvasPage(QWidget):
 
         try:
             bound_handler = compile_handler(dialog.result_code, self)
-            bind_handler(entry["widget"], entry["kind"], bound_handler, entry["handler"])
         except HandlerCompileError as exc:
             QMessageBox.critical(self, "코드 오류", str(exc))
             return
+        bind_handler(entry["widget"], entry["kind"], bound_handler, entry["handler"])
 
+        self._push_edit_undo([widget_id])
         entry["instruction"] = dialog.instruction_text
         entry["code"] = dialog.result_code
         entry["handler"] = bound_handler
@@ -1510,12 +1632,16 @@ class CanvasPage(QWidget):
         elif remove_option_action is not None and chosen == remove_option_action:
             self._remove_widget(widget_id)
         elif align_selection_action is not None and chosen == align_selection_action:
+            self._push_edit_undo(selected_top_level_containers)
             self._align_containers(selected_top_level_containers, self.rect())
         elif align_children_action is not None and chosen == align_children_action:
+            self._push_edit_undo([cid for cid, _entry in self._container_children(widget_id)])
             self._align_container_children(widget_id)
         elif match_size_action is not None and chosen == match_size_action:
+            self._push_edit_undo(self._selected_ids)
             self._match_selected_sizes(widget_id)
         elif match_column_action is not None and chosen == match_column_action:
+            self._push_edit_undo(self._selected_ids)
             self._match_selected_columns(widget_id)
         elif spacing_action is not None and chosen == spacing_action:
             self._open_group_spacing_dialog()
@@ -1543,6 +1669,7 @@ class CanvasPage(QWidget):
 
         if dialog.exec() != QDialog.Accepted:
             return
+        self._push_edit_undo(self._selected_ids)
         self._apply_group_spacing(spacing_spin.value())
 
     def _apply_group_spacing(self, spacing):
@@ -1730,6 +1857,7 @@ class CanvasPage(QWidget):
         if not color.isValid():
             return
 
+        self._push_edit_undo([widget_id])
         widget.setAttribute(Qt.WA_StyledBackground, True)
         _apply_scoped_background(widget, color.name())
         entry["color"] = color.name()
@@ -1789,6 +1917,7 @@ class CanvasPage(QWidget):
         max_y = max(0, bounds.height() - new_h)
         new_x = min(max(0, x_spin.value()), max_x)
         new_y = min(max(0, y_spin.value()), max_y)
+        self._push_edit_undo([widget_id])
         widget.setGeometry(new_x, new_y, new_w, new_h)
 
     def _rename_widget(self, widget_id):
@@ -1815,6 +1944,7 @@ class CanvasPage(QWidget):
 
         new_text = line_edit.text()
         if new_text.strip():
+            self._push_edit_undo([widget_id])
             # No adjustSize() here for any kind - a widget's size/position
             # is something the user sets explicitly (drag-resize or the
             # numeric size/position dialog), so renaming it must never
@@ -1837,6 +1967,7 @@ class CanvasPage(QWidget):
         if not ok:
             return
 
+        self._push_edit_undo([widget_id])
         # Same invariant as rename: changing a property must never move or
         # resize the widget out from under the user's own placement.
         widget.setFont(font)
