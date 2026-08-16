@@ -36,7 +36,7 @@ from window_status_widget import WindowStatusPanel
 from behavior_dialog import BehaviorDialog
 from code_binder import SIGNAL_BY_KIND, HandlerCompileError, bind_handler, compile_handler
 from exporter import build_exe, export_to_file
-from layout_templates import TEMPLATE_SPECS_BY_KEY
+from layout_templates import TEMPLATE_SPECS_BY_KEY, equalize_margins
 from palette_window import WIDGET_KIND_MIME, WIDGET_TEMPLATE_MIME
 from tab_bar import ColorTabBar
 
@@ -1250,6 +1250,31 @@ class CanvasPage(QWidget):
             menu.addAction("옵션 제거") if entry["kind"] == "radiobutton" else None
         )
 
+        # R5: selected top-level rect_group boxes align to each other/the
+        # canvas edges. R8: one rect_group's own children align to each
+        # other/that container's edges. Both reuse the same
+        # `equalize_margins` algorithm (layout_templates.py) - only the
+        # coordinate space and the set of rects being aligned differ.
+        selected_top_level_containers = [
+            wid
+            for wid in self._selected_ids
+            if self.entries.get(wid, {}).get("kind") == "rect_group"
+            and self.entries[wid].get("parent_id") is None
+        ]
+        align_selection_action = (
+            menu.addAction("선택한 사각형들 정렬")
+            if entry["kind"] == "rect_group"
+            and entry.get("parent_id") is None
+            and widget_id in selected_top_level_containers
+            and len(selected_top_level_containers) >= 2
+            else None
+        )
+        align_children_action = (
+            menu.addAction("내부 위젯 정렬")
+            if entry["kind"] == "rect_group" and len(self._container_children(widget_id)) >= 2
+            else None
+        )
+
         chosen = menu.exec(widget.mapToGlobal(pos))
         if behavior_action is not None and chosen == behavior_action:
             self._open_behavior_dialog(widget_id)
@@ -1271,6 +1296,42 @@ class CanvasPage(QWidget):
             self._add_radio_option(widget_id)
         elif remove_option_action is not None and chosen == remove_option_action:
             self._remove_widget(widget_id)
+        elif align_selection_action is not None and chosen == align_selection_action:
+            self._align_containers(selected_top_level_containers, self.rect())
+        elif align_children_action is not None and chosen == align_children_action:
+            self._align_container_children(widget_id)
+
+    def _align_containers(self, container_ids, outer_rect):
+        """R5: equalizes margins among the given top-level rect_group boxes
+        (all in page-space, same space `outer_rect` is in). Each box's own
+        `_container_min_size` floor (decision C) is passed through so
+        aligning never shrinks a container past its own children."""
+        widgets = [self.entries[wid]["widget"] for wid in container_ids]
+        rects = [(w.x(), w.y(), w.width(), w.height()) for w in widgets]
+        min_sizes = [self._container_min_size(wid) for wid in container_ids]
+        aligned = equalize_margins(
+            (outer_rect.x(), outer_rect.y(), outer_rect.width(), outer_rect.height()),
+            rects,
+            min_sizes=min_sizes,
+        )
+        for widget, (x, y, w, h) in zip(widgets, aligned):
+            widget.setGeometry(x, y, w, h)
+        self.update()
+
+    def _align_container_children(self, container_id):
+        """R8: equalizes margins among one container's own children, in that
+        container's local coordinate space (its own top-left is (0,0))."""
+        children = self._container_children(container_id)
+        container = self.entries[container_id]["widget"]
+        widgets = [entry["widget"] for _cid, entry in children]
+        rects = [(w.x(), w.y(), w.width(), w.height()) for w in widgets]
+        min_sizes = [(self._MIN_SIZE, self._MIN_SIZE)] * len(widgets)
+        aligned = equalize_margins(
+            (0, 0, container.width(), container.height()), rects, min_sizes=min_sizes
+        )
+        for widget, (x, y, w, h) in zip(widgets, aligned):
+            widget.setGeometry(x, y, w, h)
+        self.update()
 
     def _bring_widget_to_front(self, widget_id):
         entry = self.entries.pop(widget_id, None)
