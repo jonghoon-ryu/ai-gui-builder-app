@@ -104,8 +104,11 @@ venv\Scripts\pythonw.exe main.py
      다른 옵션을 직접 선택하면, 그 선택 상태가 "틀 저장"/"실행 py 저장"/"standalone 실행 파일 저장"
      모두에 그대로 반영되어 저장된다 (앱을 재시작하거나 내보낸 앱을 실행해도 첫 옵션으로 되돌아가지
      않음).
-   - **템플릿**은 제목 있는 빈 사각형(컨테이너)을 한 번에 하나 이상 캔버스에 놓는다 (지금은 "큰
-     사각형 1개" 템플릿만 있고, 나머지 변형은 추가 예정). 사각형 위에 다른 위젯을 드래그해서 놓으면
+   - **템플릿**은 제목 있는 빈 사각형(컨테이너)을 한 번에 하나 이상 캔버스에 놓는다. 6가지 배치가
+     있다: 큰 사각형 1개 / 큰 사각형 2개(상하) / 큰 사각형 2개(좌우) / 큰 사각형 1개 + 작은 사각형
+     2개(큰 것이 위) / 작은 사각형 2개 + 큰 사각형 1개(작은 것들이 위) / 직사각형 3개(가로). 사각형
+     크기·위치는 드롭 시점 캔버스 크기에 대한 비율로 정해져서, 캔버스 크기가 달라져도 항상 꽉 차게
+     들어간다. 사각형 위에 다른 위젯을 드래그해서 놓으면
      그 사각형의 자식이 되어 사각형과 함께 움직이고, 자식을 다시 사각형 밖으로 드래그하면 원래대로
      캔버스의 독립된 위젯으로 돌아온다. 사각형을 삭제하면 안의 자식도 함께 삭제되며, 바로 다음
      Ctrl+Z로 통째로 되돌릴 수 있다. 사각형은 지금 들어있는 자식들이 차지한 영역보다 작게 줄일 수
@@ -515,6 +518,7 @@ LLM이 생성한 코드는 클릭 한 번에 확인 없이 바로 실행되기 �
 | `ai_client.py` | `claude` CLI를 서브프로세스로 호출해 `def on_event(self): ...` 코드 생성. 시스템 프롬프트로 허용 함수/제약 명시 |
 | `code_binder.py` | 생성 코드를 제한된 네임스페이스에서 `exec`, 위젯 시그널에 바인딩. `open_url`/`read_file`/`write_file`/`delete_file`/`show_text_dialog`/`app_overview_text`/`tab_usage_text`/`pick_startup_file`/`add_to_startup`/`remove_from_startup` 등 화이트리스트 함수 정의 |
 | `exporter.py` | 캔버스 상태(여러 탭 포함)를 독립 실행 가능한 `.py` 소스로 직렬화 (`generate_source`/`export_to_file`), PyInstaller로 단일 `.exe` 빌드 (`build_exe`) |
+| `layout_templates.py` | 팔레트 "템플릿" 항목 6종의 배치 데이터(`TEMPLATE_SPECS`, 캔버스 크기 대비 상대좌표)와 사각형들의 여백을 자동으로 맞춰주는 `equalize_margins` 함수. Qt에 의존하지 않는 순수 데이터/계산 모듈 |
 | `alarm_widget.py` | "알람 시계" 위젯 구현 (`AlarmClockPanel`, `AnalogClock`, 날짜/시간 선택 다이얼로그들, 자연어 알람 등록) |
 | `window_status_widget.py` | "윈도우 현황" 위젯 구현 (`WindowStatusPanel`). Windows 버전/CPU/메모리/디스크/휴지통/temp 파일을 `ctypes`(+`winreg`/`subprocess`)로 조회, 추가 pip 패키지 불필요 |
 | `git_widget.py` | "git" 위젯 구현 (`GitPanel`). 드라이브 전체 git 저장소 검색 + local/remote 비교·stash (`git` CLI 필요) |

@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, QMimeData
 from PySide6.QtGui import QColor, QDrag, QPainter, QPen
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -8,11 +9,12 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
-from layout_templates import TEMPLATE_SPECS_BY_KEY
+from layout_templates import TEMPLATE_SPECS
 
 WIDGET_KIND_MIME = "application/x-widget-kind"
 # Carries a `layout_templates.TEMPLATE_SPECS` entry's "key" (plain utf-8
@@ -126,9 +128,27 @@ class PaletteWindow(QWidget):
 
         root = QHBoxLayout(self)
 
-        layout = QVBoxLayout()
+        # Scrollable, not a bare QVBoxLayout straight on the window - with
+        # the 6 template previews added on top of the original 8 items, the
+        # palette's natural content height comfortably exceeds a typical
+        # screen's height, and the window has no explicit size of its own
+        # (main.py just calls .show()), so without this the window itself
+        # would grow taller than the screen (confirmed via screenshot while
+        # building this).
+        items_container = QWidget()
+        layout = QVBoxLayout(items_container)
         layout.setSpacing(16)
-        root.addLayout(layout)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setWidget(items_container)
+        root.addWidget(scroll_area)
+
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            scroll_area.setMaximumHeight(max(400, screen.availableGeometry().height() - 120))
 
         combo = DraggableComboBox()
         combo.addItems(["옵션 1", "옵션 2", "옵션 3"])
@@ -171,7 +191,9 @@ class PaletteWindow(QWidget):
 
         radio_button = DraggableRadioButton("옵션")
 
-        template_single = DraggableTemplate(TEMPLATE_SPECS_BY_KEY["single"])
+        template_items = [
+            ("템플릿: " + spec["label"], DraggableTemplate(spec)) for spec in TEMPLATE_SPECS
+        ]
 
         for index, (label_text, widget) in enumerate(
             [
@@ -183,7 +205,7 @@ class PaletteWindow(QWidget):
                 ("라디오 버튼", radio_button),
                 ("가로선", hline),
                 ("세로선", vline),
-                ("템플릿: " + TEMPLATE_SPECS_BY_KEY["single"]["label"], template_single),
+                *template_items,
             ]
         ):
             if index > 0:
@@ -195,6 +217,12 @@ class PaletteWindow(QWidget):
             title_font = title_label.font()
             title_font.setBold(True)
             title_label.setFont(title_font)
+            # Long template labels (e.g. "템플릿: 작은 사각형 2개 + 큰 사각형
+            # 1개 (작은 것들이 위)") are wider than ITEM_WIDTH without this -
+            # unwrapped, the label forces the whole scroll area wider than
+            # the window and a needless horizontal scrollbar appears.
+            title_label.setWordWrap(True)
+            title_label.setFixedWidth(ITEM_WIDTH)
             layout.addWidget(title_label)
             if widget is vline:
                 layout.addWidget(widget, alignment=Qt.AlignHCenter)
