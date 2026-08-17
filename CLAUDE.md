@@ -83,7 +83,7 @@ venv\Scripts\pythonw.exe main.py
 | `git_widget.py` | "git" 위젯 (local/remote 비교·stash 6쌍, local drive 검색, 전체 status check. `git` CLI 필요) |
 | `theme.py` | 빌더 창(캔버스/팔레트)에 적용하는 앱 전역 QSS. `main.py`에서 `QApplication.setStyleSheet`로 적용. standalone 내보내기에도 항상 함께 포함됨 |
 | `tab_bar.py` | 탭바 구현 (`ColorTabBar`: 둥근 모서리, 탭별 색깔, 선택된 탭 볼드). 빌더/standalone 양쪽에서 같은 소스 파일 그대로 사용 |
-| `md_files/` | 문서(`how_to_use.md`, `tool_requirement.md`) 모음 |
+| `md_files/` | 문서(`how_to_use.md`, `tool_requirement.md`, `beginner_guide.md`) 모음 — `beginner_guide.md`는 파이썬/터미널을 전혀 모르는 사람이 Claude에게 말로 시켜서 앱을 켤 수 있게 하는 최소 안내 (2026-08-17 추가) |
 | `builder_framework/default/` | "틀 저장"이 쓰는 `builder_state.json`(2026-08-16부터 저장소 루트에서 이 위치로 옮김, 앱 시작 시 자동 로드되는 그 파일)과 alarm/git/gvf 위젯의 `appData/`가 있는 곳. 앱은 항상 이 폴더를 활성 틀로 시작한다 — "실행 py 저장"/"standalone 실행 파일 저장" 저장창은 고정된 여기가 아니라 **지금 활성화된 틀의 폴더**에서 열려서, 한 "틀"에서 나온 상태 파일과 내보낸 결과물이 한곳에 모인다 |
 | `builder_framework/<이름>/` | "다른 이름으로 틀 저장"으로 만든, `default`와 같은 구조의 이름 붙은 틀들 |
 | `examples/website_link_button/app.py` | 참고용 최소 예제(버튼 1개로 URL 열기). 2026-08-16에 `executable_py/2026_07_26/app.py`에서 옮김 — `executable_py/`/`standalone/`(2026-08-16 이전 내보내기 결과물이 쌓이던 예전 위치)는 이 파일만 옮긴 뒤 정리함, 저장 다이얼로그는 더 이상 여기서 시작하지 않음 |
