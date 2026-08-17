@@ -29,6 +29,13 @@ standalone 내보내기, 자연어 동작 생성용 화이트리스트 함수, �
 - 2026-08-16 이전 내보내기 결과물이 쌓이던 `executable_py/`/`standalone/`은 정리됨(참고용 최소
   예제 하나만 `examples/website_link_button/app.py`로 옮겨 보존).
 
+**2026-08-17에 파이썬/터미널을 전혀 모르는 사람을 위한 `md_files/beginner_guide.md` 추가됨** -
+Claude Code가 이미 설치되어 있다는 전제로, 완성된 standalone `.exe`가 있으면 그냥 실행하는 법을,
+없으면 빌더를 켜서(파이썬/venv 설치까지 Claude에게 말로 시키면 됨) 만드는 법을 안내. `how_to_use.md`
+0번 섹션/`CLAUDE.md` 파일 구성 표에서 서로 연결됨. 같은 날 로컬 전용(`.gitignore`에 걸려 커밋 안 됨)
+Claude Code 스킬 `run-ai-gui-builder-app`(`.claude/skills/`)도 만들어짐 - `launch`시 venv 없으면
+자동으로 만들고 패키지 설치까지 하는 부트스트랩 로직 포함, 이 가이드가 실제로 동작함을 뒷받침.
+
 Windows에서 직접 실행/검증됨 (아래 "Windows 이전" 참고).
 
 ## Windows 이전 (2026-08-12)
